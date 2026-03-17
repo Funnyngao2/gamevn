@@ -1,0 +1,15 @@
+{
+  "name": "among-us-server",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "mysql2": "^3.11.0",
+    "nanoid": "^3.3.7",
+    "socket.io": "^4.8.0",
+    "ws": "^8.18.0"
+  }
+}

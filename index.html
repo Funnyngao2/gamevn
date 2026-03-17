@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Among Us</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script type="module" src="/src/main.js"></script>
+  <script>
+    // Unlock Web Audio API on first user gesture (Chrome autoplay policy)
+    const unlockAudio = () => {
+      const ctx = window.AudioContext || window.webkitAudioContext
+      if (ctx) {
+        const tmp = new ctx()
+        tmp.resume().then(() => tmp.close())
+      }
+      document.removeEventListener('click', unlockAudio)
+      document.removeEventListener('keydown', unlockAudio)
+    }
+    document.addEventListener('click', unlockAudio)
+    document.addEventListener('keydown', unlockAudio)
+  </script>
+</body>
+</html>

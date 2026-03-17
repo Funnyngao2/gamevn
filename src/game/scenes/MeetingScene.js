@@ -1,4 +1,5 @@
 // MeetingScene.js - discussion (15s/player turn) + vote phase (15s)
+import Phaser from 'phaser'
 import { safePlay } from '../../utils/safePlay.js'
 import { PLAYER_COLORS } from '../../config.js'
 import { createDomInput } from '../../utils/domInput.js'

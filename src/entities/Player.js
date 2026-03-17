@@ -1,4 +1,5 @@
 // Player.js - local and remote player entity
+import Phaser from 'phaser'
 import { PLAYER_SPEED } from '../config.js'
 
 // Frame counts per direction (matches actual assets)

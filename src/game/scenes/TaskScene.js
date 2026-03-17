@@ -1,5 +1,6 @@
 // TaskScene.js - mini-game overlay for crewmate tasks
 // Launched on top of GameScene, emits 'taskComplete' or 'taskClose' event
+import Phaser from 'phaser'
 
 export class TaskScene extends Phaser.Scene {
   constructor() { super('Task') }

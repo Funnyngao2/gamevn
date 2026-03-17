@@ -1,4 +1,5 @@
 // GameScene.js - main gameplay scene
+import Phaser from 'phaser'
 import { Player } from '../../entities/Player.js'
 import { safePlay } from '../../utils/safePlay.js'
 import { NO_OF_MISSIONS, KILL_COOLDOWN, MEETING_COOLDOWN, REACTOR_CRITICAL_TIME, VENT_COOLDOWN, SABOTAGE_COOLDOWN } from '../../config.js'

@@ -1,8 +1,7 @@
 // GameScene.js - main gameplay scene
-import { io } from 'socket.io-client'
-import { Player } from '../entities/Player.js'
-import { safePlay } from '../utils/safePlay.js'
-import { NO_OF_MISSIONS, KILL_COOLDOWN, MEETING_COOLDOWN, REACTOR_CRITICAL_TIME, VENT_COOLDOWN, SABOTAGE_COOLDOWN } from '../config.js'
+import { Player } from '../../entities/Player.js'
+import { safePlay } from '../../utils/safePlay.js'
+import { NO_OF_MISSIONS, KILL_COOLDOWN, MEETING_COOLDOWN, REACTOR_CRITICAL_TIME, VENT_COOLDOWN, SABOTAGE_COOLDOWN } from '../../config.js'
 
 const INTERACT_RANGE = 80
 
@@ -10,12 +9,15 @@ export class GameScene extends Phaser.Scene {
   constructor() { super('Game') }
 
   init(data) {
-    this.playerColor   = data.playerColor   || 'red'
-    this.playerName    = data.playerName    || 'Player'
-    this.gameMode      = data.gameMode      || 'multiplayer'
-    this.isImposter    = data.isImposter === true
-    this.roomId        = data.roomId        || null
-    this._existingSocket = data.socket      || null
+    // Support both old data-passing and new registry-based approach (from React/PhaserGame.jsx)
+    const reg = this.game?.registry
+    this.playerColor     = data.playerColor   || reg?.get('playerColor') || 'red'
+    this.playerName      = data.playerName    || reg?.get('playerName')  || 'Player'
+    this.gameMode        = data.gameMode      || 'multiplayer'
+    this.isImposter      = data.isImposter === true || reg?.get('isImposter') === true
+    this.roomId          = data.roomId        || reg?.get('roomId')      || null
+    this._existingSocket = data.socket        || reg?.get('socket')      || null
+    this._onGameEnd      = data.onGameEnd     || reg?.get('onGameEnd')   || null
   }
 
   create() {
@@ -1050,39 +1052,36 @@ export class GameScene extends Phaser.Scene {
     this.bgMusic?.stop()
     if (this.scene.isActive('Meeting')) this.scene.stop('Meeting')
     safePlay(this, winner === 'crew' ? 'victory_crew' : 'victory_impostor')
-    // Remove all game listeners so the socket is clean for Lobby reuse
     if (this.ws) {
       this.ws.off('id'); this.ws.off('players'); this.ws.off('kill')
       this.ws.off('meeting'); this.ws.off('gameover'); this.ws.off('chat')
       this.ws.off('vote'); this.ws.off('meetingChat')
     }
     this.time.delayedCall(1500, () => {
+      // Notify React app if callback provided (new React architecture)
+      if (this._onGameEnd) {
+        this._onGameEnd(winner)
+        return
+      }
+      // Fallback: old Phaser scene transition
       this.scene.start('GameOver', {
         winner,
-        playerColor:   this.playerColor,
-        playerName:    this.playerName,
-        socket:        this.ws,
-        roomId:        this.roomId
+        playerColor: this.playerColor,
+        playerName:  this.playerName,
+        socket:      this.ws,
+        roomId:      this.roomId
       })
     })
   }
 
   // --- MULTIPLAYER ---
   _initMultiplayer() {
-    // Reuse socket from LobbyScene if available, otherwise create new
-    if (this._existingSocket?.connected) {
-      this.ws = this._existingSocket
-      this.playerId = this.ws.id  // set ID immediately from existing socket
-      this._setupSocketListeners()
-      this._sendPlayerState()
-    } else {
-      this.ws = io('/', { transports: ['websocket'] })
-      this.ws.on('connect', () => {
-        this.playerId = this.ws.id
-        this._sendPlayerState()
-      })
-      this._setupSocketListeners()
-    }
+    // Socket always comes from React singleton (via registry)
+    this.ws = this._existingSocket
+    if (!this.ws) { console.error('GameScene: no socket provided'); return }
+    this.playerId = this.ws.id
+    this._setupSocketListeners()
+    this._sendPlayerState()
     this.time.addEvent({ delay: 50, loop: true, callback: this._sendPlayerState, callbackScope: this })
   }
 
@@ -1189,16 +1188,7 @@ export class GameScene extends Phaser.Scene {
       if (!this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.taskKey)) this._tryInteractTask()
       // L = leave game
       if (this.leaveKey && Phaser.Input.Keyboard.JustDown(this.leaveKey)) {
-        if (this.ws) {
-          this.ws.off('id'); this.ws.off('players'); this.ws.off('kill')
-          this.ws.off('meeting'); this.ws.off('gameover'); this.ws.off('chat')
-          this.ws.off('vote'); this.ws.off('meetingChat')
-        }
-        this.scene.start('GameOver', {
-          winner: null,
-          playerColor: this.playerColor, playerName: this.playerName,
-          socket: this.ws, roomId: this.roomId
-        })
+        this._endGame(null)
       }
       this._updateInteractionPrompt()
       return

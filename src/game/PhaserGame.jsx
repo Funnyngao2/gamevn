@@ -282,6 +282,7 @@ export default function PhaserGame({ visible }) {
         <GameChatOverlay
           gameRef={gameRef}
           socket={getSocket()}
+          playerName={playerName}
           playerColor={playerColor}
           isImposter={gameData?.isImposter || false}
           socketId={getSocket()?.id}

@@ -311,6 +311,7 @@ io.on('connection', (socket) => {
     if (!allReady) return socket.emit('error', { msg: 'Chờ tất cả sẵn sàng' })
 
     room.started = true
+    room.tasksDone = new Map()  // reset task tracking
     dbRun('UPDATE game_rooms SET status="started" WHERE id=?', [p.roomId])
 
     // Phân vai và khởi tạo vị trí mặc định
@@ -446,7 +447,33 @@ io.on('connection', (socket) => {
 
   socket.on('taskDone', ({ taskId }) => {
     const p = players.get(socket.id); if (!p?.roomId) return
-    broadcastRoom(p.roomId, 'taskDone', { playerId: socket.id, taskId })
+    const room = rooms.get(p.roomId); if (!room) return
+
+    // Track tasks done per player
+    if (!room.tasksDone) room.tasksDone = new Map()
+    if (!room.tasksDone.has(socket.id)) room.tasksDone.set(socket.id, new Set())
+    room.tasksDone.get(socket.id).add(taskId)
+
+    // Tổng task done toàn phòng (unique per player per task)
+    let totalDone = 0
+    room.tasksDone.forEach(set => { totalDone += set.size })
+
+    // Số crewmate * số task mỗi người (5 tasks hardcoded theo _createTaskList)
+    const TASKS_PER_PLAYER = 5
+    const crewCount = [...room.players].filter(sid => {
+      const pl = players.get(sid)
+      return pl?.state && !pl.state.imposter
+    }).length
+    const totalNeeded = crewCount * TASKS_PER_PLAYER
+
+    broadcastRoom(p.roomId, 'taskDone', { playerId: socket.id, taskId, totalDone, totalNeeded })
+
+    // Server tự quyết crew win khi đủ task
+    if (totalNeeded > 0 && totalDone >= totalNeeded) {
+      broadcastRoom(p.roomId, 'gameover', { winner: 'crew' })
+      socket.emit('gameover', { winner: 'crew' })
+      room.started = false
+    }
   })
 
   socket.on('sabotage', ({ type }) => {

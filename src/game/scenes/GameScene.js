@@ -114,8 +114,6 @@ this.time.delayedCall(3000, () => {
 // --- HUD ---
 this._createHUD()
 
-// --- CHAT UI ---
-this._createChatUI()
     this._chatBridge = { alive: true, isImposter: this.isImposter }
     this.game.registry.set('chatBridge', this._chatBridge)
     // sendChat function exposed to React
@@ -266,6 +264,7 @@ this._createChatUI()
     safePlay(this, 'task_complete')
     if (this.ws) this.ws.emit('taskDone', { taskId })
     this._refreshTaskMarkers()
+    this._checkWinConditions()
   }
 
   _updateHUD() {
@@ -613,10 +612,9 @@ this._createChatUI()
   }
 
   _checkImpostorWin() {
-    // Không kiểm tra trong 3 giây đầu để tránh lỗi thiếu player list
     if (!this._gameFullyStarted) return
+    if (this._gameoverEmitted) return
 
-    // Count alive crewmates vs alive impostors across all players
     const remote = Object.values(this.remotePlayers)
     const aliveCrewRemote = remote.filter(p => p.alive && !p.isImposter).length
     const aliveImpRemote  = remote.filter(p => p.alive && p.isImposter).length
@@ -624,25 +622,26 @@ this._createChatUI()
     const selfImp  =  this.player.isImposter && this.player.alive ? 1 : 0
     const totalCrew = aliveCrewRemote + selfCrew
     const totalImp  = aliveImpRemote  + selfImp
-    
-    // Sửa logic: Chỉ thắng khi Crewmate không còn ai sống sót (totalCrew === 0)
-    // Điều này cho phép chơi/test 2 người (1 Imp - 1 Crew) mà không bị end game ngay
+
     if (totalCrew === 0 && totalImp > 0) {
+      this._gameoverEmitted = true
       if (this.ws) this.ws.emit('gameover', { winner: 'impostor' })
     }
   }
 
   _checkWinConditions() {
     if (!this.playing) return
-    // Không kiểm tra trong 3 giây đầu
-    if (this.time.now - this.startTime < 3000) return
+    if (!this._gameFullyStarted) return
+    if (this._gameoverEmitted) return  // chỉ emit 1 lần
 
     const total = this.taskList ? this.taskList.length : NO_OF_MISSIONS
     if (this.missionsDone >= total) {
+      this._gameoverEmitted = true
       if (this.ws) this.ws.emit('gameover', { winner: 'crew' })
       return
     }
     if (this.sabotageReactor && this.time.now - this.reactorStartTime > REACTOR_CRITICAL_TIME) {
+      this._gameoverEmitted = true
       if (this.ws) this.ws.emit('gameover', { winner: 'impostor' })
     }
   }
@@ -699,14 +698,14 @@ this._createChatUI()
   }
 
   _checkAllImpostorsGone() {
-    // Không kiểm tra trong 3 giây đầu
-    if (this.time.now - this.startTime < 3000) return
+    if (!this._gameFullyStarted) return
+    if (this._gameoverEmitted) return
 
     const remote = Object.values(this.remotePlayers)
     const aliveImpRemote = remote.filter(p => p.alive && p.isImposter).length
     const selfImp = this.player.isImposter && this.player.alive ? 1 : 0
     if (aliveImpRemote + selfImp === 0) {
-      // Let server be the authority — just emit, server will broadcast gameover back
+      this._gameoverEmitted = true
       if (this.ws) this.ws.emit('gameover', { winner: 'crew' })
     }
   }
@@ -781,6 +780,15 @@ this._createChatUI()
   _endGame(winner) {
     if (!this.playing) return
     this.playing = false
+    // Cleanup visibility listener và native interval
+    if (this._onVisibilityChange) {
+      document.removeEventListener('visibilitychange', this._onVisibilityChange)
+      this._onVisibilityChange = null
+    }
+    if (this._nativeStateInterval) {
+      clearInterval(this._nativeStateInterval)
+      this._nativeStateInterval = null
+    }
     this.bgMusic?.stop()
     if (this.scene.isActive('Meeting')) this.scene.stop('Meeting')
     safePlay(this, winner === 'crew' ? 'victory_crew' : 'victory_impostor')
@@ -814,7 +822,26 @@ this._createChatUI()
     this.playerId = this.ws.id
     this._setupSocketListeners()
     this._sendPlayerState()
+    // Phaser timer cho tab active (30ms)
     this.time.addEvent({ delay: 30, loop: true, callback: this._sendPlayerState, callbackScope: this })
+
+    // Khi tab bị ẩn, Phaser timer bị throttle → dùng native interval thay thế
+    this._nativeStateInterval = null
+    this._onVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab ẩn: dùng native interval 200ms để giữ kết nối
+        if (!this._nativeStateInterval) {
+          this._nativeStateInterval = setInterval(() => this._sendPlayerState(), 200)
+        }
+      } else {
+        // Tab active lại: dừng native interval, Phaser timer tiếp quản
+        if (this._nativeStateInterval) {
+          clearInterval(this._nativeStateInterval)
+          this._nativeStateInterval = null
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', this._onVisibilityChange)
   }
 
   _setupSocketListeners() {

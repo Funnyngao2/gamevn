@@ -95,6 +95,29 @@ CREATE TABLE `game_room_events` (
   COMMENT='Log sự kiện trong trận đấu';
 
 -- ─────────────────────────────────────────────────────────────
+-- Table: chat_messages
+-- Lưu tin nhắn chat lobby và in-game
+-- ─────────────────────────────────────────────────────────────
+
+DROP TABLE IF EXISTS `chat_messages`;
+
+CREATE TABLE `chat_messages` (
+  `id`          int          NOT NULL AUTO_INCREMENT,
+  `room_id`     varchar(21)  COLLATE utf8mb3_unicode_ci DEFAULT NULL COMMENT 'NULL = lobby chat',
+  `sender_id`   varchar(64)  COLLATE utf8mb3_unicode_ci NOT NULL COMMENT 'socket_id người gửi',
+  `sender_name` varchar(20)  COLLATE utf8mb3_unicode_ci NOT NULL DEFAULT 'Player',
+  `sender_color` varchar(10) COLLATE utf8mb3_unicode_ci NOT NULL DEFAULT 'red',
+  `channel`     enum('lobby','all','ghost') COLLATE utf8mb3_unicode_ci NOT NULL DEFAULT 'lobby',
+  `text`        varchar(200) COLLATE utf8mb3_unicode_ci NOT NULL,
+  `created_at`  datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_channel` (`channel`),
+  KEY `idx_room_id` (`room_id`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci
+  COMMENT='Tin nhắn chat lobby và in-game';
+
+-- ─────────────────────────────────────────────────────────────
 -- Restore settings
 -- ─────────────────────────────────────────────────────────────
 

@@ -5,6 +5,13 @@ export class PreloadScene extends Phaser.Scene {
   constructor() { super('Preload') }
 
   preload() {
+    // Cache-bust để tránh lỗi 304 ERR_FAILED khi chơi ván 2+
+    const v = Date.now()
+    const img  = (key, path) => this.load.image(key, `${path}?v=${v}`)
+    const ss   = (key, path, cfg) => this.load.spritesheet(key, `${path}?v=${v}`, cfg)
+    const json = (key, path) => this.load.tilemapTiledJSON(key, `${path}?v=${v}`)
+    const audio = (key, path) => this.load.audio(key, path) // audio không bị lỗi này
+
     // Bridge load progress to React overlay
     this.load.on('progress', v => {
       this.game.registry.get('onLoadProgress')?.(v)
@@ -16,25 +23,25 @@ export class PreloadScene extends Phaser.Scene {
       'choosecolour','entername','enteraddress','freeplay','online','help',
       'credits','options','quit','input','sel','select','return','imposteramongus',
       'imposteramongusback','shhhhhhh','pink']
-    menuImgs.forEach(k => this.load.image(k, `assets/Images/menu/${k}.png`))
+    menuImgs.forEach(k => img(k, `assets/Images/menu/${k}.png`))
 
     const alertImgs = ['defeat','victory','victoryback','victoryback2','eject',
       'emergency_meeting_blue','emergency_meeting_green','emergency_meeting_orange',
       'emergency_meeting_red','emergency_meeting_yellow',
       'report_dead_body_blue','report_dead_body_green','report_dead_body_orange',
       'report_dead_body_red','report_dead_body_yellow']
-    alertImgs.forEach(k => this.load.image(k, `assets/Images/Alerts/${k}.png`))
-    for (let i = 1; i <= 18; i++) this.load.image(`kill${i}`, `assets/Images/Alerts/kill${i}.png`)
+    alertImgs.forEach(k => img(k, `assets/Images/Alerts/${k}.png`))
+    for (let i = 1; i <= 18; i++) img(`kill${i}`, `assets/Images/Alerts/kill${i}.png`)
 
     const meetImgs = ['chat','chat_dead','checkbox','close','e_vote_base','e_vote_base_dead',
       'proceed','select_vote','skip_vote','voted_players']
-    meetImgs.forEach(k => this.load.image(k, `assets/Images/Meeting/${k}.png`))
+    meetImgs.forEach(k => img(k, `assets/Images/Meeting/${k}.png`))
 
     const itemImgs = ['emergency_button','emergency_button_highlight','emergency_icon',
       'emergency_icon_bright','emergency_icon_inv','generator','generator_highlight',
       'health_pack','gas_can','gas_can_highlighted','fuel_engine','fuel_engine_highlighted',
       'electricity_wires','electricity_wires_connected','electricity_wires_highlight']
-    itemImgs.forEach(k => this.load.image(k, `assets/Images/Items/${k}.png`))
+    itemImgs.forEach(k => img(k, `assets/Images/Items/${k}.png`))
 
     // ── Character sprite sheets (3 cols × 4 rows, 32×32 each) ──────────────
     const charSprites = {
@@ -46,20 +53,17 @@ export class PreloadScene extends Phaser.Scene {
       blue:   'Male 10-1.png',
       green:  'Male 14-1.png',
       orange: 'Male 16-1.png',
-      // yellow and white reuse existing sheets
       yellow: 'Female 06-1.png',
       white:  'Female 06-1.png',
     }
     Object.entries(charSprites).forEach(([color, file]) => {
-      this.load.spritesheet(`char_${color}`, `assets/Images/charater/${file}`, {
-        frameWidth: 32, frameHeight: 32
-      })
-      this.load.image(`${color}_dead`, `assets/Images/Player/Dead/Dead${color}.png`)
+      ss(`char_${color}`, `assets/Images/charater/${file}`, { frameWidth: 32, frameHeight: 32 })
+      img(`${color}_dead`, `assets/Images/Player/Dead/Dead${color}.png`)
     })
 
-    this.load.tilemapTiledJSON('map', 'assets/Maps/map.json')
-    this.load.image('map2', 'assets/Maps/map2.png')
-    this.load.image('minimap', 'assets/Maps/mini_map3.png')
+    json('map', 'assets/Maps/map.json')
+    img('map2', 'assets/Maps/map2.png')
+    img('minimap', 'assets/Maps/mini_map3.png')
 
     const sfx = ['task_complete','roundstart','swap','vent','report_Bodyfound',
       'alarm_emergencymeeting','victory_crew','victory_impostor','victory_disconnect',

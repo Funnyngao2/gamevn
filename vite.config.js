@@ -1,13 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 export default defineConfig({
   server: {
     port: 8080,
     headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp'
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },
     proxy: {
       '/socket.io': {
@@ -17,12 +17,12 @@ export default defineConfig({
       }
     }
   },
-  // Giải pháp triệt để cho simple-peer và các thư viện Node.js trên Vite
   define: {
     global: 'window',
     'process.env': {}
   },
   plugins: [
+    nodePolyfills({ include: ['stream', 'buffer', 'util', 'events', 'process'] }),
     react(),
     tailwindcss(),
     {

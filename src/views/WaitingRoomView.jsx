@@ -37,7 +37,7 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
   const [chatInput, setChatInput] = useState('')
   const [showInvite, setShowInvite] = useState(false)
   
-  // Voice Chat (Realtime)
+  // Voice Chat States
   const [isMicOn, setIsMicOn] = useState(false)
   const [remoteStreams, setRemoteStreams] = useState({})
   const [speakingPlayers, setSpeakingPlayers] = useState({})
@@ -58,72 +58,110 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
   const peersRef = useRef({})
   const myUUID = localStorage.getItem('playerUUID')
 
-  // ── VOICE CHAT (REALTIME) ──────────────────────────────────────────────────
+  // ── VOICE CHAT LOGIC ──────────────────────────────────────────────────────
   useEffect(() => {
-    socket.emit('toggleMic', { isMicOn })
+    if (socket) {
+      socket.emit('toggleMic', { isMicOn })
+    }
+
     if (isMicOn) {
       navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         localStream.current = stream
-        Object.values(peersRef.current).forEach(peer => peer.addStream(stream))
-      }).catch(err => { setIsMicOn(false); onError("Không thể truy cập Mic.") })
+        Object.values(peersRef.current).forEach(peer => {
+          try { peer.addStream(stream) } catch(e) {}
+        })
+      }).catch(err => {
+        console.error("Mic error:", err)
+        setIsMicOn(false)
+        onError("Không thể truy cập Micro.")
+      })
     } else {
-      if (localStream.current) { localStream.current.getTracks().forEach(t => t.stop()); localStream.current = null }
+      if (localStream.current) {
+        localStream.current.getTracks().forEach(t => t.stop())
+        localStream.current = null
+      }
     }
-  }, [isMicOn])
+  }, [isMicOn, socket])
 
   useEffect(() => {
-    if (!socket) return
-    socket.on('voicePeerJoined', ({ peerId }) => { peersRef.current[peerId] = createPeer(peerId, socket.id, localStream.current) })
-    socket.on('voiceOffer', ({ from, offer }) => { peersRef.current[from] = addPeer(offer, from, localStream.current) })
-    socket.on('voiceAnswer', ({ from, answer }) => { peersRef.current[from]?.signal(answer) })
-    socket.on('voiceIceCandidate', ({ from, candidate }) => { peersRef.current[from]?.signal(candidate) })
-    socket.on('voicePeerLeft', ({ peerId }) => {
-      if (peersRef.current[peerId]) { peersRef.current[peerId].destroy(); delete peersRef.current[peerId]
+    if (!socket || !room?.id) return
+
+    const handlePeerJoined = ({ peerId }) => {
+      peersRef.current[peerId] = createPeer(peerId, socket.id, localStream.current)
+    }
+    const handleOffer = ({ from, offer }) => {
+      peersRef.current[from] = addPeer(offer, from, localStream.current)
+    }
+    const handleAnswer = ({ from, answer }) => {
+      peersRef.current[from]?.signal(answer)
+    }
+    const handleCandidate = ({ from, candidate }) => {
+      peersRef.current[from]?.signal(candidate)
+    }
+    const handlePeerLeft = ({ peerId }) => {
+      if (peersRef.current[peerId]) {
+        peersRef.current[peerId].destroy()
+        delete peersRef.current[peerId]
         setRemoteStreams(prev => { const n = {...prev}; delete n[peerId]; return n })
       }
-    })
+    }
+
+    socket.on('voicePeerJoined', handlePeerJoined)
+    socket.on('voiceOffer', handleOffer)
+    socket.on('voiceAnswer', handleAnswer)
+    socket.on('voiceIceCandidate', handleCandidate)
+    socket.on('voicePeerLeft', handlePeerLeft)
+    
     socket.emit('voiceJoin', { roomId: room.id })
-    return () => { socket.emit('voiceLeave', { roomId: room.id }); Object.values(peersRef.current).forEach(p => p.destroy()); peersRef.current = {} }
-  }, [socket, room.id])
+
+    return () => {
+      socket.emit('voiceLeave', { roomId: room.id })
+      socket.off('voicePeerJoined', handlePeerJoined)
+      socket.off('voiceOffer', handleOffer)
+      socket.off('voiceAnswer', handleAnswer)
+      socket.off('voiceIceCandidate', handleCandidate)
+      socket.off('voicePeerLeft', handlePeerLeft)
+      Object.values(peersRef.current).forEach(p => p.destroy())
+      peersRef.current = {}
+    }
+  }, [socket, room?.id])
 
   function createPeer(tId, cId, stream) {
     const opts = { initiator: true, trickle: false }
     if (stream) opts.stream = stream
     const p = new Peer(opts)
-    p.on('signal', sig => socket.emit('voiceOffer', { roomId: room.id, to: tId, offer: sig }))
+    p.on('signal', sig => socket?.emit('voiceOffer', { roomId: room.id, to: tId, offer: sig }))
     p.on('stream', st => setRemoteStreams(prev => ({ ...prev, [tId]: st })))
-    p.on('error', err => console.warn('createPeer error', err))
     return p
   }
   function addPeer(incoming, cId, stream) {
     const opts = { initiator: false, trickle: false }
     if (stream) opts.stream = stream
     const p = new Peer(opts)
-    p.on('signal', sig => socket.emit('voiceAnswer', { roomId: room.id, to: cId, answer: sig }))
+    p.on('signal', sig => socket?.emit('voiceAnswer', { roomId: room.id, to: cId, answer: sig }))
     p.on('stream', st => setRemoteStreams(prev => ({ ...prev, [cId]: st })))
-    p.on('error', err => console.warn('addPeer error', err))
     p.signal(incoming); return p
   }
 
-  // ── VOICE MESSAGE (RECORDING) ──────────────────────────────────────────────
+  // ── VOICE MESSAGE LOGIC ───────────────────────────────────────────────────
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       mediaRecorder.current = new MediaRecorder(stream)
       audioChunks.current = []
       mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
-      mediaRecorder.current.onstop = async () => {
+      mediaRecorder.current.onstop = () => {
         const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' })
         const reader = new FileReader()
         reader.readAsDataURL(audioBlob)
         reader.onloadend = () => {
-          socket.emit(activeTab === 'room' ? 'roomChat' : 'lobbyChat', { text: '', audioData: reader.result })
+          socket?.emit(activeTab === 'room' ? 'roomChat' : 'lobbyChat', { text: '', audioData: reader.result })
         }
         stream.getTracks().forEach(t => t.stop())
       }
       mediaRecorder.current.start(); setIsRecording(true); setRecordTime(0)
       recordTimer.current = setInterval(() => setRecordTime(p => p + 1), 1000)
-    } catch (err) { onError("Lỗi khởi động ghi âm.") }
+    } catch (err) { onError("Lỗi ghi âm.") }
   }
 
   const stopRecording = () => {
@@ -132,7 +170,7 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
     }
   }
 
-  // ── OTHER LOGIC ────────────────────────────────────────────────────────────
+  // ── MISC LOGIC ────────────────────────────────────────────────────────────
   useEffect(() => {
     const iv = setInterval(() => {
       const now = Date.now()
@@ -149,33 +187,49 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
   }, [])
 
   useEffect(() => {
-    if (!socket) return
-    socket.off('roomChat');    socket.on('roomChat',   d => setRoomMsgs(p  => [...p.slice(-99), normalizeMsg(d)]))
-    socket.off('lobbyChat');   socket.on('lobbyChat',  d => setLobbyMsgs(p => [...p.slice(-99), normalizeMsg(d)]))
-    socket.off('chatHistory'); socket.on('chatHistory', d => {
-      if (d.channel === 'room')  setRoomMsgs(d.messages.map(normalizeMsg))
+    if (!socket || !room?.id) return
+    const hRoom = d => setRoomMsgs(p => [...p.slice(-99), normalizeMsg(d)])
+    const hLobby = d => setLobbyMsgs(p => [...p.slice(-99), normalizeMsg(d)])
+    const hHist = d => {
+      if (d.channel === 'room') setRoomMsgs(d.messages.map(normalizeMsg))
       if (d.channel === 'lobby') setLobbyMsgs(d.messages.map(normalizeMsg))
-    })
-    socket.emit('getChatHistory', { channel: 'room',  roomId: room.id }); socket.emit('getChatHistory', { channel: 'lobby' })
-    return () => { socket.off('roomChat'); socket.off('lobbyChat'); socket.off('chatHistory') }
-  }, [socket, room.id])
+    }
+    socket.on('roomChat', hRoom); socket.on('lobbyChat', hLobby); socket.on('chatHistory', hHist)
+    socket.emit('getChatHistory', { channel: 'room', roomId: room.id })
+    socket.emit('getChatHistory', { channel: 'lobby' })
+    return () => { socket.off('roomChat', hRoom); socket.off('lobbyChat', hLobby); socket.off('chatHistory', hHist) }
+  }, [socket, room?.id])
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [roomMsgs, lobbyMsgs, activeTab])
 
   const sendChat = () => {
     const t = chatInput.trim(); if (!t) return
-    socket.emit(activeTab === 'room' ? 'roomChat' : 'lobbyChat', { text: t }); setChatInput('')
+    socket?.emit(activeTab === 'room' ? 'roomChat' : 'lobbyChat', { text: t }); setChatInput('')
   }
 
-  const handleAvatarClick = (e, player) => { if (player.id !== socketId) { e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, player }) } }
-  
+  const handleAvatarClick = (e, player) => {
+    e.stopPropagation()
+    if (player.id === socketId) return // Không mở menu cho chính mình
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      player: player
+    })
+  }
+
+  const handleKick = (player) => {
+    if (!isHost) return
+    socket?.emit('kickPlayer', { targetId: player.id })
+    setContextMenu(null)
+  }
+
   // Logic tính toán trạng thái bắt đầu
-  const myPlayer = room.players?.find(p => p.id === socketId)
+  // Dùng UUID để tìm chính mình vì socketId có thể thay đổi khi reconnect
+  const myPlayer = room.players?.find(p => p.uuid === myUUID || p.id === socketId)
   const isReady  = myPlayer?.ready || false
   const nonHost  = room.players?.filter(p => p.id !== room.host) || []
   const allReady = nonHost.length > 0 && nonHost.every(p => p.ready)
   const canStart = (room.players?.length || 0) >= 2 && allReady
-  
   const msgs = activeTab === 'room' ? roomMsgs : lobbyMsgs
   const idleUsers = (users || []).filter(u => !u.roomId && u.id !== socketId)
 
@@ -190,13 +244,13 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
 
       <AnimatePresence>{contextMenu && <motion.div className="player-context-menu" initial={{ opacity:0, scale:0.95 }} animate={{ opacity:1, scale:1 }} style={{ top: contextMenu.y, left: contextMenu.x }}>
         <button className="context-menu-item" onClick={() => { setSelectedPlayer(contextMenu.player); setContextMenu(null) }}><Info size={14} /> Xem thông tin</button>
-        {isHost && <button className="context-menu-item danger" onClick={() => socket.emit('roomChat', { text: `⚠️ Chủ phòng mời ${contextMenu.player.name} rời phòng.` })}><UserX size={14} /> Đuổi</button>}
+        {isHost && <button className="context-menu-item danger" onClick={() => handleKick(contextMenu.player)}><UserX size={14} /> Đuổi</button>}
       </motion.div>}</AnimatePresence>
 
       <AnimatePresence>{selectedPlayer && <div className="invite-modal-overlay" onClick={() => setSelectedPlayer(null)}><motion.div className="player-info-modal" initial={{ scale:0.9 }} animate={{ scale:1 }} onClick={e => e.stopPropagation()}>
         <div className="flex justify-center mb-4"><div className="w-20 h-20 rounded-full border-4" style={{ borderColor: COLOR_HEX[selectedPlayer.color] }}><img src={`assets/Images/avatar/${AVATAR_MAP[selectedPlayer.color]}`} className="w-full h-full object-cover rounded-full" /></div></div>
         <h3 className="text-white font-black text-xl">{selectedPlayer.name}</h3>
-        <div className="space-y-1 mt-4">{[{ icon: <Trophy size={12} />, label: 'Cấp bậc', value: 'Tân binh', color: '#fff' },{ icon: <Swords size={12} />, label: 'Thắng', value: '12', color: '#22c55e' },{ icon: <Skull size={12} />, label: 'Thua', value: '8', color: '#ef4444' }].map((s, i) => (<div key={i} className="stat-row"><div className="flex items-center gap-2 text-white/30 text-[11px] font-bold">{s.icon} {s.label}</div><span className="text-xs font-black" style={{ color: s.color }}>{s.value}</span></div>))}</div>
+        <div className="space-y-1 mt-4">{[{ icon: <Trophy size={12} />, label: 'Thắng', value: '12', color: '#22c55e' },{ icon: <Skull size={12} />, label: 'Thua', value: '8', color: '#ef4444' }].map((s, i) => (<div key={i} className="stat-row"><div className="flex items-center gap-2 text-white/30 text-[11px] font-bold">{s.icon} {s.label}</div><span className="text-xs font-black" style={{ color: s.color }}>{s.value}</span></div>))}</div>
         <button className="w-full mt-6 py-2 rounded-xl bg-white/5 text-white/50 font-bold text-xs" onClick={() => setSelectedPlayer(null)}>Đóng</button>
       </motion.div></div>}</AnimatePresence>
 
@@ -204,7 +258,7 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
         <div className="invite-modal-header"><span className="text-white font-black text-sm">MỜI NGƯỜI CHƠI</span><button onClick={() => setShowInvite(false)}><X size={18} /></button></div>
         <div className="invite-list">{idleUsers.length === 0 ? <div className="py-10 opacity-20 text-center text-xs">Không có ai rảnh...</div> : idleUsers.map(u => {
           const cd = invitedIds[u.id] ? Math.max(0, Math.ceil((5000 - (Date.now() - invitedIds[u.id])) / 1000)) : 0
-          return (<div key={u.id} className="invite-item"><img src={`assets/Images/avatar/${AVATAR_MAP[u.color]}`} className="w-8 h-8 rounded-full" /><span className="text-white/80 text-xs font-bold">{u.name}</span><button className="btn-send-invite" disabled={cd > 0} onClick={() => { socket.emit('invitePlayer', { targetId: u.id, roomName: room.name, roomId: room.id }); setInvitedIds(p => ({...p, [u.id]: Date.now()})) }}>{cd > 0 ? `${cd}s` : 'Mời'}</button></div>)
+          return (<div key={u.id} className="invite-item"><img src={`assets/Images/avatar/${AVATAR_MAP[u.color]}`} className="w-8 h-8 rounded-full" /><span className="text-white/80 text-xs font-bold">{u.name}</span><button className="btn-send-invite" disabled={cd > 0} onClick={() => { socket?.emit('invitePlayer', { targetId: u.id, roomName: room.name, roomId: room.id }); setInvitedIds(p => ({...p, [u.id]: Date.now()})) }}>{cd > 0 ? `${cd}s` : 'Mời'}</button></div>)
         })}</div>
       </motion.div></div>}</AnimatePresence>
 
@@ -229,14 +283,17 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
           <div className="chat-input-section relative">
             <AnimatePresence>{isRecording && <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:10 }} className="absolute inset-0 z-10 bg-slate-900 flex items-center px-4 gap-3"><div className="flex items-center gap-2 flex-1"><Circle size={10} fill="#ef4444" className="animate-pulse" /><span className="text-white text-xs font-bold">Ghi âm: {recordTime}s</span><div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden"><motion.div className="h-full bg-red-500" initial={{ width:0 }} animate={{ width:'100%' }} transition={{ duration:30, ease:'linear' }} /></div></div><button onClick={stopRecording} className="text-[10px] font-black uppercase text-red-400">Dừng & Gửi</button></motion.div>}</AnimatePresence>
             {activeTab === 'room' && <button onClick={() => setIsMicOn(!isMicOn)} className="p-1.5 rounded-lg" style={{ color: isMicOn ? '#22d3ee' : 'rgba(255,255,255,0.2)' }}>{isMicOn ? <Mic size={16} /> : <MicOff size={16} />}</button>}
-            <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} placeholder="Nhắn tin..." className="flex-1 bg-transparent text-white text-xs outline-none" />
+            <input value={chatInput} onChange={e => setChatInput(e.target.value)} 
+              onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') sendChat() }} 
+              onClick={e => e.stopPropagation()}
+              placeholder="Nhắn tin..." className="flex-1 bg-transparent text-white text-xs outline-none" />
             <div className="flex items-center gap-1"><button onClick={startRecording} className="p-1.5 text-white/30 hover:text-cyan-400"><Mic size={16} /></button><button onClick={sendChat} className="chat-send-btn-small">➤</button></div>
           </div>
         </motion.div>
       </div>
 
       <div className="action-bar">
-        {!isHost && <div className="host-controls"><motion.button onClick={() => socket.emit('setReady', { ready: !isReady })} className="btn-action-primary" style={{background:isReady?'linear-gradient(135deg,#06b6d4,#8b5cf6)':'rgba(255,255,255,0.07)', color:isReady?'#000':'rgba(255,255,255,0.7)'}}>{isReady ? <CheckCircle2 size={18} /> : <Hand size={18} />} <span>{isReady?'Đã sẵn sàng':'Sẵn sàng'}</span></motion.button></div>}
+        {!isHost && <div className="host-controls"><motion.button onClick={() => onReady(!isReady)} className="btn-action-primary" style={{background:isReady?'linear-gradient(135deg,#06b6d4,#8b5cf6)':'rgba(255,255,255,0.07)', color:isReady?'#000':'rgba(255,255,255,0.7)'}}>{isReady ? <CheckCircle2 size={18} /> : <Hand size={18} />} <span>{isReady?'Đã sẵn sàng':'Sẵn sàng'}</span></motion.button></div>}
         {isHost && (
           <div className="host-controls">
             <span className="start-status-text" style={{ color: canStart ? '#06b6d4' : 'rgba(255,255,255,0.4)' }}>
@@ -273,8 +330,8 @@ function AudioElement({ stream, onSpeaking }) {
       const aCtx = new (window.AudioContext || window.webkitAudioContext)()
       const ana = aCtx.createAnalyser(); const src = aCtx.createMediaStreamSource(stream); src.connect(ana)
       const data = new Uint8Array(ana.frequencyBinCount)
-      const check = () => { ana.getByteFrequencyData(data); const avg = data.reduce((a,b)=>a+b)/data.length; onSpeaking(avg>15); requestAnimationFrame(check) }
-      check(); return () => aCtx.close()
+      const check = () => { if(!ana) return; ana.getByteFrequencyData(data); const avg = data.reduce((a,b)=>a+b)/data.length; onSpeaking(avg>15); requestAnimationFrame(check) }
+      check(); return () => { aCtx.close() }
     }
   }, [stream])
   return <audio ref={audioRef} autoPlay playsInline />

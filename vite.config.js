@@ -6,7 +6,6 @@ export default defineConfig({
   server: {
     port: 8080,
     headers: {
-      // Ensure correct MIME types for audio
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'
     },
@@ -17,6 +16,11 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  // Giải pháp triệt để cho simple-peer và các thư viện Node.js trên Vite
+  define: {
+    global: 'window',
+    'process.env': {}
   },
   plugins: [
     react(),

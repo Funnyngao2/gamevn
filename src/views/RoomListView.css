@@ -411,6 +411,9 @@
     display: none !important; /* Ẩn các chi tiết thừa trên mobile */
   }
 
+  .profile-card{
+    width: 0 !important; /* Để profile card tự co lại theo nội dung */
+  }
   .profile-avatar-img-container {
     width: 3.5rem !important;
     height: 3.5rem !important;
@@ -430,13 +433,12 @@
     flex-direction: column !important;
   }
 
-  .lobby-chat-container {
-    height: 150px !important; /* Thu nhỏ chat thêm một chút */
-  }
 
   .lobby-chat-container .text-sm {
     font-size: 0.75rem !important; /* Thu nhỏ chữ trong chat */
   }
+
+
 
   .create-room-btn-toolbar {
     position: relative !important; /* Trả về vị trí cũ */
@@ -490,12 +492,16 @@
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
-  height: 220px;
+  height: 330px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(20px);
 }
-
+@media (max-width: 768px) {
+  .lobby-chat-container {
+    height: 250px !important; /* Thu nhỏ chiều cao chat trên mobile */
+  } 
+}
 .chat-header {
   padding: 0.625rem 1rem;
   flex-shrink: 0;

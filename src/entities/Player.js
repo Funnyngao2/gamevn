@@ -15,8 +15,8 @@ const DIR_FRAMES = {
 }
 
 // Lerp factor per frame — higher = snappier, lower = smoother
-// At 60fps, 0.2 means ~3 frames to close 50% of the gap → very smooth
-const LERP = 0.2
+// Delta-time based: target 60fps, lerp speed = 12 → rất mượt
+const LERP_SPEED = 12
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y, color, isLocal = true) {
@@ -43,9 +43,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }).setOrigin(0.5).setDepth(3)
 
     this._buildAnims(scene, color)
-    this.play(`${color}_walk_down`)
-
     this._dir = 'down'
+    this.play(`${color}_idle_${this._dir}`)
+
     this._moving = false
     this._footTimer = 0
     this._footIndex = 0
@@ -63,19 +63,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         scene.anims.create({
           key: walkKey,
           frames: frames.map(f => ({ key, frame: f })),
-          frameRate: 8,
+          frameRate: 10,
           repeat: -1,
         })
       }
+      const idleKey = `${color}_idle_${dir}`
+      if (!scene.anims.exists(idleKey)) {
+        scene.anims.create({
+          key: idleKey,
+          frames: [{ key, frame: idle }],
+          frameRate: 1,
+        })
+      }
     })
-    const idleKey = `${color}_idle`
-    if (!scene.anims.exists(idleKey)) {
-      scene.anims.create({
-        key: idleKey,
-        frames: [{ key, frame: DIR_FRAMES.down.idle }],
-        frameRate: 1,
-      })
-    }
   }
 
   setName(name) {
@@ -90,9 +90,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     let vx = 0, vy = 0
 
     if (cursors.left.isDown  || cursors.a?.isDown) { vx = -PLAYER_SPEED; this._dir = 'left' }
-    if (cursors.right.isDown || cursors.d?.isDown) { vx =  PLAYER_SPEED; this._dir = 'right' }
+    else if (cursors.right.isDown || cursors.d?.isDown) { vx =  PLAYER_SPEED; this._dir = 'right' }
+    
     if (cursors.up.isDown    || cursors.w?.isDown) { vy = -PLAYER_SPEED; this._dir = 'up' }
-    if (cursors.down.isDown  || cursors.s?.isDown) { vy =  PLAYER_SPEED; this._dir = 'down' }
+    else if (cursors.down.isDown  || cursors.s?.isDown) { vy =  PLAYER_SPEED; this._dir = 'down' }
 
     if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
 
@@ -101,41 +102,50 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this._moving) {
       this.play(`${this.color}_walk_${this._dir}`, true)
-      if (time - this._footTimer > 350) {
+      if (time - this._footTimer > 300) {
         this._footTimer = time
         this._footIndex = (this._footIndex + 1) % 8
         const key = `footstep0${this._footIndex + 1}`
         if (this.scene.cache.audio.has(key)) {
-          this.scene.sound.play(key, { volume: 0.3 })
+          this.scene.sound.play(key, { volume: 0.25 })
         }
       }
     } else {
-      this.play(`${this.color}_idle`, true)
+      this.play(`${this.color}_idle_${this._dir}`, true)
     }
 
     this.nameLabel.setPosition(this.x, this.y - 40)
   }
 
   // Called every frame by GameScene.update() for remote players — smooth lerp
-  updateRemote() {
+  updateRemote(delta = 16.67) {
     if (this.isLocal) return
 
     const dx = this._targetX - this.x
     const dy = this._targetY - this.y
     const dist = Math.sqrt(dx * dx + dy * dy)
 
-    if (dist < 1) {
-      // Close enough — snap and stop
+    if (dist < 0.5) {
       this.x = this._targetX
       this.y = this._targetY
+      if (this.alive && !this._isGhost) this.play(`${this.color}_idle_${this._dir}`, true)
     } else if (dist > 300) {
-      // Too far (teleport / respawn) — snap immediately
+      // Teleport nếu quá xa
       this.x = this._targetX
       this.y = this._targetY
     } else {
-      // Lerp toward target
-      this.x += dx * LERP
-      this.y += dy * LERP
+      // Delta-time based lerp — mượt bất kể framerate
+      const t = 1 - Math.pow(1 - LERP_SPEED / 1000, delta)
+      this.x += dx * t
+      this.y += dy * t
+      
+      // Update animation based on movement direction during lerp
+      if (this.alive && !this._isGhost) {
+        const absDx = Math.abs(dx), absDy = Math.abs(dy)
+        if (absDx > absDy) this._dir = dx > 0 ? 'right' : 'left'
+        else this._dir = dy > 0 ? 'down' : 'up'
+        this.play(`${this.color}_walk_${this._dir}`, true)
+      }
     }
 
     this.nameLabel.setPosition(this.x, this.y - 40)
@@ -145,27 +155,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   syncRemote(data) {
     this.isImposter = data.imposter
     this.tasksCompleted = data.tasks
+    this.alive = data.alive !== false && data.isGhost !== true
 
     // Update interpolation target
     this._targetX = data.x
     this._targetY = data.y
 
-    // Update animation based on movement direction toward target
-    const dx = data.x - this.x
-    const dy = data.y - this.y
-    const moving = Math.abs(dx) > 2 || Math.abs(dy) > 2
-
-    if (!data.alive) return  // ghost: position handled by updateRemote, no anim change
-
-    this.alive = true
-
-    if (moving) {
-      const absDx = Math.abs(dx), absDy = Math.abs(dy)
-      const dir = absDx > absDy ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up')
-      this.play(`${this.color}_walk_${dir}`, true)
-    } else {
-      this.play(`${this.color}_idle`, true)
+    if (!this.alive) {
+      if (!this._isGhost) this.becomeGhost()
+      return
     }
+
+    this._isGhost = false
+    this.setAlpha(1)
+    this.setTint(0xffffff)
   }
 
   die() {

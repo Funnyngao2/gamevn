@@ -1,73 +1,14 @@
-// PreloadScene.js - space-themed loading screen with logo
+// PreloadScene.js - asset loader, visual handled by React overlay (PhaserGame.jsx)
 import Phaser from 'phaser'
 
 export class PreloadScene extends Phaser.Scene {
   constructor() { super('Preload') }
 
   preload() {
-    const { width: W, height: H } = this.scale
-
-    // ── Space background ────────────────────────────────────────────────────
-    this.add.rectangle(W/2, H/2, W, H, 0x000008)
-
-    // Stars
-    for (let i = 0; i < 180; i++) {
-      const x = Phaser.Math.Between(0, W)
-      const y = Phaser.Math.Between(0, H)
-      const r = Phaser.Math.FloatBetween(0.5, 2)
-      const a = Phaser.Math.FloatBetween(0.3, 1)
-      const star = this.add.circle(x, y, r, 0xffffff, a)
-      this.tweens.add({
-        targets: star, alpha: 0.1,
-        duration: Phaser.Math.Between(800, 2500),
-        yoyo: true, repeat: -1,
-        delay: Phaser.Math.Between(0, 2000)
-      })
-    }
-
-    // ── Logo image ──────────────────────────────────────────────────────────
-    if (this.textures.exists('logo')) {
-      const logo = this.add.image(W/2, H/2 - 60, 'logo')
-      const scale = Math.min(220 / logo.width, 120 / logo.height)
-      logo.setScale(scale)
-    }
-
-    // ── Progress bar ────────────────────────────────────────────────────────
-    const barW = Math.min(W * 0.6, 600)
-    const barX = W/2 - barW/2, barY = H/2 + 80, barH = 6
-
-    // Track
-    const track = this.add.graphics()
-    track.fillStyle(0x1a1a2e, 1)
-    track.fillRoundedRect(barX - 1, barY - 1, barW + 2, barH + 2, 4)
-
-    // Fill
-    const fill = this.add.graphics()
-
-    // Glow effect on fill
-    const glow = this.add.graphics()
-
-    const loadingTxt = this.add.text(barX, barY - 22, 'Đang tải...', {
-      fontSize: '13px', color: '#e2e8f0', fontFamily: 'Arial', letterSpacing: 1
-    })
-    const pctTxt = this.add.text(barX + barW, barY - 22, '0%', {
-      fontSize: '13px', color: '#e2e8f0', fontFamily: 'Arial'
-    }).setOrigin(1, 0)
-
+    // Bridge load progress to React overlay
     this.load.on('progress', v => {
-      fill.clear()
-      fill.fillStyle(0x4ecdc4, 1)
-      fill.fillRoundedRect(barX, barY, barW * v, barH, 3)
-
-      glow.clear()
-      glow.fillStyle(0x4ecdc4, 0.25)
-      glow.fillRoundedRect(barX, barY - 3, barW * v, barH + 6, 5)
-
-      const pct = Math.round(v * 100)
-      pctTxt.setText(`${pct}%`)
-      loadingTxt.setText(pct < 100 ? `Đang tải... ${pct}%` : 'Hoàn tất!')
+      this.game.registry.get('onLoadProgress')?.(v)
     })
-
     this.load.on('loaderror', f => console.warn('Failed to load:', f.src))
 
     // ── Assets ──────────────────────────────────────────────────────────────
@@ -137,6 +78,8 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   create() {
+    // Notify React overlay that loading is done
+    this.game.registry.get('onLoadComplete')?.()
     this.scene.start('Game')
   }
 }

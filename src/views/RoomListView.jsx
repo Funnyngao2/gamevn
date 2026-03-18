@@ -8,13 +8,9 @@ import './RoomListView.css'
 
 const EMOJIS = ['😂','😍','🔥','👍','💀','🎮','🚀','😎','🤡','👑']
 
-export default function RoomListView({ rooms, users, playerName, playerColor, socketId, error, onJoin, onCreate, onRefresh, onBack }) {
-  const [search,     setSearch]     = useState('')
-  const [roomName,   setRoomName]   = useState(`${playerName}'s Room`)
-  const [maxPlayers, setMaxPlayers] = useState(8)
+function LobbyChat({ socket, myUUID }) {
   const [lobbyMsgs,  setLobbyMsgs] = useState([])
   const [chatInput,  setChatInput]  = useState('')
-  const [showCreate, setShowCreate] = useState(false)
   const [showEmoji,  setShowEmoji]  = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [recordTime, setRecordTime] = useState(0)
@@ -23,8 +19,26 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
   const recordTimer = useRef(null)
   const chatEndRef = useRef(null)
   const inputRef   = useRef(null)
-  const socket = useRef(getSocket())
-  
+
+  useEffect(() => {
+    const s = socket.current
+    if (!s) return
+    const hChat = d => setLobbyMsgs(p => [...p.slice(-99), normalizeMsg(d)])
+    const hHist = d => { if (d.channel === 'lobby') setLobbyMsgs(d.messages.map(normalizeMsg)) }
+    s.on('lobbyChat', hChat)
+    s.on('chatHistory', hHist)
+    s.emit('getChatHistory', { channel: 'lobby' })
+    return () => { s.off('lobbyChat', hChat); s.off('chatHistory', hHist) }
+  }, [socket])
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [lobbyMsgs])
+
+  const sendChat = () => {
+    const t = chatInput.trim(); if (!t) return
+    socket.current.emit('lobbyChat', { text: t }); setChatInput(''); setShowEmoji(false)
+  }
+  const addEmoji = (e) => { setChatInput(p => p + e); setShowEmoji(false); setTimeout(() => inputRef.current?.focus(), 10) }
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -50,6 +64,84 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
       mediaRecorder.current.stop(); setIsRecording(false); clearInterval(recordTimer.current)
     }
   }
+
+  return (
+    <div className="lobby-chat-container">
+      <div className="chat-header">
+        <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+        <span className="text-cyan-400 text-xs font-extrabold tracking-widest">LOBBY CHAT</span>
+        <span className="ml-auto text-white/20 text-xs">{lobbyMsgs.length} tin nhắn</span>
+      </div>
+      <div className="overflow-y-auto px-4 py-2.5 space-y-1.5" style={{ flex:'1 1 0', minHeight:0 }}>
+        {lobbyMsgs.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-white/15">
+            <span className="text-2xl">💬</span>
+            <p className="text-sm italic">Chưa có tin nhắn nào...</p>
+          </div>
+        )}
+        {lobbyMsgs.map((m, i) => <ChatLine key={i} msg={m} myId={myUUID} />)}
+        <div ref={chatEndRef} />
+      </div>
+      <div className="relative shrink-0 px-3 py-2.5"
+        style={{ borderTop:'1px solid rgba(255,255,255,0.07)' }}>
+        <AnimatePresence>
+          {showEmoji && (
+            <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:6 }}
+              className="emoji-picker-container">
+              {EMOJIS.map(e => (
+                <button key={e} onClick={() => addEmoji(e)}
+                  className="text-lg w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 hover:scale-125 transition-all">
+                  {e}
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <div className="chat-input-wrapper relative">
+          <AnimatePresence>
+            {isRecording && (
+              <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:10 }}
+                className="absolute inset-0 z-10 bg-slate-900 rounded-xl flex items-center px-4 gap-3">
+                <div className="flex items-center gap-2 flex-1">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-white text-[10px] font-bold">Ghi âm: {recordTime}s</span>
+                  <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+                    <motion.div className="h-full bg-red-500" initial={{ width:0 }} animate={{ width:'100%' }} transition={{ duration:30, ease:'linear' }} />
+                  </div>
+                </div>
+                <button onClick={stopRecording} className="text-[9px] font-black uppercase text-red-400">Dừng & Gửi</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <button onClick={() => setShowEmoji(v => !v)}
+            className="text-lg shrink-0 opacity-50 hover:opacity-100 transition-opacity hover:scale-110">😊</button>
+          <input ref={inputRef} value={chatInput} onChange={e => setChatInput(e.target.value)}
+            onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') sendChat() }}
+            placeholder="Nhắn tin với mọi người..."
+            className="flex-1 bg-transparent text-white text-sm placeholder-white/25 outline-none" />
+          
+          <div className="flex items-center gap-1">
+            <button onClick={startRecording} className="p-1.5 text-white/30 hover:text-cyan-400">
+              <Mic size={16} />
+            </button>
+            <motion.button onClick={sendChat} whileHover={{ scale:1.1 }} whileTap={{ scale:0.9 }}
+              className="chat-send-btn">
+              ➤
+            </motion.button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function RoomListView({ rooms, users, playerName, playerColor, socketId, error, onJoin, onCreate, onRefresh, onBack }) {
+  const [search,     setSearch]     = useState('')
+  const [roomName,   setRoomName]   = useState(`${playerName}'s Room`)
+  const [maxPlayers, setMaxPlayers] = useState(8)
+  const [showCreate, setShowCreate] = useState(false)
+  const socket = useRef(getSocket())
   const myUUID = localStorage.getItem('playerUUID')
   const hex = COLOR_HEX[playerColor] || '#8b5cf6'
 
@@ -62,25 +154,7 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
     '--player-color-shadow': `${hex}40`,
   }
 
-  useEffect(() => {
-    const s = socket.current
-    s.off('lobbyChat'); s.off('chatHistory')
-    s.on('lobbyChat',   d => setLobbyMsgs(p => [...p.slice(-99), normalizeMsg(d)]))
-    s.on('chatHistory', d => { if (d.channel === 'lobby') setLobbyMsgs(d.messages.map(normalizeMsg)) })
-    s.emit('getChatHistory', { channel: 'lobby' })
-    return () => { s.off('lobbyChat'); s.off('chatHistory') }
-  }, [])
-
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [lobbyMsgs])
-
-  const sendChat = () => {
-    const t = chatInput.trim(); if (!t) return
-    socket.current.emit('lobbyChat', { text: t }); setChatInput(''); setShowEmoji(false)
-  }
-  const addEmoji = (e) => { setChatInput(p => p + e); setShowEmoji(false); inputRef.current?.focus() }
   const filtered = rooms.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()))
-
-  // Lọc danh sách người chơi online bằng socketId duy nhất (loại bỏ chính mình)
   const otherUsers = (users || []).filter(u => u.id !== socketId)
 
   return (
@@ -300,73 +374,7 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
           </div>
 
           {/* Lobby chat */}
-          <div className="lobby-chat-container">
-            <div className="chat-header">
-              <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="text-cyan-400 text-xs font-extrabold tracking-widest">LOBBY CHAT</span>
-              <span className="ml-auto text-white/20 text-xs">{lobbyMsgs.length} tin nhắn</span>
-            </div>
-            <div className="overflow-y-auto px-4 py-2.5 space-y-1.5" style={{ flex:'1 1 0', minHeight:0 }}>
-              {lobbyMsgs.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full gap-2 text-white/15">
-                  <span className="text-2xl">💬</span>
-                  <p className="text-sm italic">Chưa có tin nhắn nào...</p>
-                </div>
-              )}
-              {lobbyMsgs.map((m, i) => <ChatLine key={i} msg={m} myId={myUUID} />)}
-              <div ref={chatEndRef} />
-            </div>
-            <div className="relative shrink-0 px-3 py-2.5"
-              style={{ borderTop:'1px solid rgba(255,255,255,0.07)' }}>
-              <AnimatePresence>
-                {showEmoji && (
-                  <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:6 }}
-                    className="emoji-picker-container">
-                    {EMOJIS.map(e => (
-                      <button key={e} onClick={() => addEmoji(e)}
-                        className="text-lg w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 hover:scale-125 transition-all">
-                        {e}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <div className="chat-input-wrapper relative">
-                <AnimatePresence>
-                  {isRecording && (
-                    <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:10 }}
-                      className="absolute inset-0 z-10 bg-slate-900 rounded-xl flex items-center px-4 gap-3">
-                      <div className="flex items-center gap-2 flex-1">
-                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                        <span className="text-white text-[10px] font-bold">Ghi âm: {recordTime}s</span>
-                        <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
-                          <motion.div className="h-full bg-red-500" initial={{ width:0 }} animate={{ width:'100%' }} transition={{ duration:30, ease:'linear' }} />
-                        </div>
-                      </div>
-                      <button onClick={stopRecording} className="text-[9px] font-black uppercase text-red-400">Dừng & Gửi</button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <button onClick={() => setShowEmoji(v => !v)}
-                  className="text-lg shrink-0 opacity-50 hover:opacity-100 transition-opacity hover:scale-110">😊</button>
-                <input ref={inputRef} value={chatInput} onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && sendChat()}
-                  placeholder="Nhắn tin với mọi người..."
-                  className="flex-1 bg-transparent text-white text-sm placeholder-white/25 outline-none" />
-                
-                <div className="flex items-center gap-1">
-                  <button onClick={startRecording} className="p-1.5 text-white/30 hover:text-cyan-400">
-                    <Mic size={16} />
-                  </button>
-                  <motion.button onClick={sendChat} whileHover={{ scale:1.1 }} whileTap={{ scale:0.9 }}
-                    className="chat-send-btn">
-                    ➤
-                  </motion.button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <LobbyChat socket={socket} myUUID={myUUID} />
         </motion.div>
       </div>
     </motion.div>

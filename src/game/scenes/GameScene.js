@@ -103,19 +103,23 @@ export class GameScene extends Phaser.Scene {
     this.meetingCooldownStart = this.time.now
     this.remotePlayers = {}
     this.playerId = 'local'
+    this.startTime = Date.now() // Dùng Date.now() để đồng bộ tuyệt đối
+    this._gameFullyStarted = false // Cờ chặn kiểm tra thắng thua
+// Sau 3 giây mới cho phép kiểm tra thắng thua
+this.time.delayedCall(3000, () => {
+  this._gameFullyStarted = true
+  console.log("🚀 Game logic fully active")
+})
 
-    // --- INTERACTION PROMPT ---
-    this.promptText = this.add.text(0, 0, '', {
-      fontSize: '16px', color: '#ffff00',
-      stroke: '#000', strokeThickness: 3,
-      backgroundColor: '#00000088', padding: { x: 8, y: 4 }
-    }).setDepth(20).setVisible(false)
+// --- HUD ---
+this._createHUD()
 
-    // --- HUD ---
-    this._createHUD()
-
-    // --- CHAT UI ---
-    this._createChatUI()
+// --- CHAT UI ---
+this._createChatUI()
+    this._chatBridge = { alive: true, isImposter: this.isImposter }
+    this.game.registry.set('chatBridge', this._chatBridge)
+    // sendChat function exposed to React
+    this.game.registry.set('sendChat', (text, channel) => this._sendChat(text, channel))
 
     // --- MUSIC ---
     if (this.cache.audio.has('bg_music')) {
@@ -130,56 +134,12 @@ export class GameScene extends Phaser.Scene {
       this.killCooldownStart = this.time.now
     })
 
-    // Role reveal overlay
-    this._showRoleReveal()
-  }
+    // Role reveal — handled by React overlay via registry
+    this.game.registry.get('onRoleReveal')?.(this.isImposter, this.playerColor)
 
-  _showRoleReveal() {
-    const isImp = this.player.isImposter
-    const { width, height } = this.scale
-
-    const overlay = this.add.rectangle(width / 2, height / 2, width, height,
-      isImp ? 0x1a0000 : 0x001a0a, 0.92).setScrollFactor(0).setDepth(50)
-
-    const roleIcon = this.add.text(width / 2, height / 2 - 60,
-      isImp ? '☠' : '✓', { fontSize: '80px' })
-      .setOrigin(0.5).setScrollFactor(0).setDepth(51)
-
-    const roleLabel = this.add.text(width / 2, height / 2 + 20,
-      isImp ? 'BẠN LÀ KẺ PHẢN BỘI' : 'BẠN LÀ PHI HÀNH GIA', {
-        fontSize: '32px', fontStyle: 'bold', fontFamily: 'Arial',
-        color: isImp ? '#ff4444' : '#44ff88',
-        stroke: '#000', strokeThickness: 4
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(51)
-
-    const subLabel = this.add.text(width / 2, height / 2 + 70,
-      isImp ? 'Giết tất cả phi hành gia!' : 'Hoàn thành nhiệm vụ và tìm ra kẻ phản bội!', {
-        fontSize: '16px', fontFamily: 'Arial', color: '#cccccc'
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(51)
-
-    const countdown = this.add.text(width / 2, height / 2 + 120, '', {
-      fontSize: '14px', color: '#888888', fontFamily: 'Arial'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(51)
-
-    let secs = 3
-    const tick = this.time.addEvent({
-      delay: 1000, repeat: 2,
-      callback: () => {
-        secs--
-        countdown.setText(secs > 0 ? `Bắt đầu sau ${secs}s...` : 'Bắt đầu!')
-        if (secs <= 0) {
-          this.tweens.add({
-            targets: [overlay, roleIcon, roleLabel, subLabel, countdown],
-            alpha: 0, duration: 400,
-            onComplete: () => {
-              overlay.destroy(); roleIcon.destroy()
-              roleLabel.destroy(); subLabel.destroy(); countdown.destroy()
-            }
-          })
-        }
-      }
-    })
-    countdown.setText(`Bắt đầu sau ${secs}s...`)
+    // Chờ role reveal xong (4s) mới cho phép check win conditions
+    this._gameFullyStarted = false
+    this.time.delayedCall(5000, () => { this._gameFullyStarted = true })
   }
 
   _getSpawn() {
@@ -235,148 +195,21 @@ export class GameScene extends Phaser.Scene {
     // Draw task zone markers on map (crewmate only)
     if (!isImp) this._drawTaskMarkers()
 
-    // Minimap (all players)
-    this._createMinimap()
-  }
-
-  _createMinimap() {
-    const { width, height } = this.scale
-    // Minimap dimensions and position (bottom-right corner)
-    const MM_W = 200, MM_H = 120, MM_X = width - MM_W - 10, MM_Y = height - MM_H - 10
-    this._mm = { x: MM_X, y: MM_Y, w: MM_W, h: MM_H }
-
-    // Background border
-    this.add.rectangle(MM_X - 2, MM_Y - 2, MM_W + 4, MM_H + 4, 0x000000, 0.8)
-      .setOrigin(0).setScrollFactor(0).setDepth(19)
-
-    // Minimap image — scale to fit
-    if (this.textures.exists('minimap')) {
-      const img = this.add.image(MM_X, MM_Y, 'minimap')
-        .setOrigin(0).setScrollFactor(0).setDepth(20)
-      img.setDisplaySize(MM_W, MM_H)
-    } else {
-      // Fallback: dark rectangle
-      this.add.rectangle(MM_X, MM_Y, MM_W, MM_H, 0x0a1a0a, 0.9)
-        .setOrigin(0).setScrollFactor(0).setDepth(20)
-    }
-
-    // Overlay graphics for dots (redrawn each frame)
-    this._mmGraphics = this.add.graphics().setScrollFactor(0).setDepth(22)
-
-    // Player dot (local) — always white
-    this._mmPlayerDot = this.add.circle(0, 0, 4, 0xffffff)
-      .setScrollFactor(0).setDepth(23)
-
-    // Direction arrow toward nearest undone task (crewmate only)
-    this._mmArrow = this.add.graphics().setScrollFactor(0).setDepth(24)
-
-    // [M] toggle hint
-    this.add.text(MM_X + MM_W - 4, MM_Y - 14, '[M] Bản đồ', {
-      fontSize: '10px', color: '#888888', fontFamily: 'Arial'
-    }).setOrigin(1, 0).setScrollFactor(0).setDepth(22)
-
-    // Toggle key
-    this._minimapVisible = true
-    this._mapKey = this.input.keyboard.addKey('M')
-  }
-
-  _worldToMinimap(wx, wy) {
-    const mapW = this.map.widthInPixels
-    const mapH = this.map.heightInPixels
-    const { x, y, w, h } = this._mm
-    return {
-      x: x + (wx / mapW) * w,
-      y: y + (wy / mapH) * h
-    }
+    // Minimap handled by React overlay (MinimapOverlay.jsx)
   }
 
   _updateMinimap() {
-    if (!this._mmGraphics) return
-
-    // Toggle visibility
-    if (Phaser.Input.Keyboard.JustDown(this._mapKey)) {
-      this._minimapVisible = !this._minimapVisible
-      this._mmGraphics.setVisible(this._minimapVisible)
-      this._mmPlayerDot.setVisible(this._minimapVisible)
-      this._mmArrow.setVisible(this._minimapVisible)
-    }
-    if (!this._minimapVisible) return
-
-    this._mmGraphics.clear()
-    this._mmArrow.clear()
-
-    // Draw remote player dots
-    Object.values(this.remotePlayers).forEach(rp => {
-      if (!rp.visible) return
-      const pos = this._worldToMinimap(rp.x, rp.y)
-      const col = rp.alive ? 0xffffff : 0x4444ff
-      this._mmGraphics.fillStyle(col, 0.85)
-      this._mmGraphics.fillCircle(pos.x, pos.y, 3)
+    // Bridge minimap data to React overlay
+    if (!this.game?.registry) return
+    this.game.registry.set('minimapData', {
+      localPlayer: { x: this.player.x, y: this.player.y, color: this.playerColor, alive: this.player.alive },
+      remotePlayers: Object.values(this.remotePlayers).map(rp => ({
+        id: rp.playerId, x: rp.x, y: rp.y, color: rp.color,
+        name: rp.playerName, alive: rp.alive,
+      })),
+      tasks: this.taskList?.map(t => ({ x: t.x, y: t.y, label: t.label, done: t.done })) || [],
+      isImposter: this.player.isImposter,
     })
-
-    // Draw task dots (crewmate only)
-    if (!this.player.isImposter && this.taskList) {
-      this.taskList.forEach(t => {
-        const pos = this._worldToMinimap(t.x, t.y)
-        this._mmGraphics.fillStyle(t.done ? 0x44ff88 : 0xffff44, 0.9)
-        this._mmGraphics.fillRect(pos.x - 3, pos.y - 3, 6, 6)
-      })
-    }
-
-    // Local player dot
-    const pp = this._worldToMinimap(this.player.x, this.player.y)
-    this._mmPlayerDot.setPosition(pp.x, pp.y)
-
-    // Direction arrow to nearest undone task (crewmate only, alive)
-    if (!this.player.isImposter && this.player.alive && this.taskList) {
-      const undone = this.taskList.filter(t => !t.done)
-      if (undone.length > 0) {
-        // Find nearest
-        let nearest = undone[0], minD = Infinity
-        undone.forEach(t => {
-          const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, t.x, t.y)
-          if (d < minD) { minD = d; nearest = t }
-        })
-
-        // Only show arrow if task is off-screen
-        const cam = this.cameras.main
-        const onScreen = (
-          nearest.x > cam.scrollX && nearest.x < cam.scrollX + cam.width &&
-          nearest.y > cam.scrollY && nearest.y < cam.scrollY + cam.height
-        )
-
-        if (!onScreen) {
-          // Draw arrow on minimap pointing from player dot to task dot
-          const tp = this._worldToMinimap(nearest.x, nearest.y)
-          const angle = Phaser.Math.Angle.Between(pp.x, pp.y, tp.x, tp.y)
-          const len = 10
-          const ax = pp.x + Math.cos(angle) * len
-          const ay = pp.y + Math.sin(angle) * len
-
-          this._mmArrow.lineStyle(2, 0xffff00, 1)
-          this._mmArrow.beginPath()
-          this._mmArrow.moveTo(pp.x, pp.y)
-          this._mmArrow.lineTo(ax, ay)
-          this._mmArrow.strokePath()
-
-          // Arrowhead
-          const headLen = 5
-          const a1 = angle + Math.PI * 0.8
-          const a2 = angle - Math.PI * 0.8
-          this._mmArrow.fillStyle(0xffff00, 1)
-          this._mmArrow.fillTriangle(
-            ax, ay,
-            ax + Math.cos(a1) * headLen, ay + Math.sin(a1) * headLen,
-            ax + Math.cos(a2) * headLen, ay + Math.sin(a2) * headLen
-          )
-
-          // Also show distance text near arrow
-          const dist = Math.round(minD / 32)  // convert pixels to tiles
-          this._mmArrow.fillStyle(0x000000, 0.6)
-          // (text drawn separately below)
-        }
-      }
-    }
   }
 
   _drawTaskMarkers() {
@@ -463,41 +296,33 @@ export class GameScene extends Phaser.Scene {
 
   _updateInteractionPrompt() {
     if (!this.player.alive) {
-      // Ghost crewmate: show task prompt if near task
       if (!this.player.isImposter && this.taskList) {
         const px = this.player.x, py = this.player.y
         const nearTask = this.taskList.find(t =>
           !t.done && Phaser.Math.Distance.Between(px, py, t.x, t.y) < INTERACT_RANGE)
         if (nearTask) {
-          this.promptText.setText(`[F] ${nearTask.label}`)
-            .setPosition(px - this.promptText.width / 2, py - 70).setVisible(true)
+          this.game.registry.get('onPrompt')?.(`[F] ${nearTask.label}`)
           return
         }
       }
-      this.promptText.setVisible(false)
+      this.game.registry.get('onPrompt')?.(null)
       return
     }
 
-    // While in vent, show vent controls
     if (this.player.inVent) {
-      this.promptText
-        .setText(`[V] Cống tiếp theo | [E] Thoát cống`)
-        .setPosition(this.player.x - this.promptText.width / 2, this.player.y - 70)
-        .setVisible(true)
+      this.game.registry.get('onPrompt')?.(`[V] Cống tiếp theo | [E] Thoát cống`)
       return
     }
 
     const px = this.player.x, py = this.player.y
     let prompt = null
 
-    // Check vent proximity (impostor only)
     if (this.player.isImposter) {
       const nearVent = this.ventZones.find(v =>
         Phaser.Math.Distance.Between(px, py, v.x, v.y) < INTERACT_RANGE)
       if (nearVent) prompt = '[V] Nhảy vào cống'
     }
 
-    // Check kill target (impostor only)
     if (this.player.isImposter && !prompt) {
       const targets = Object.values(this.remotePlayers).filter(p => !p.isImposter)
       const nearTarget = targets.find(p => p.alive &&
@@ -508,9 +333,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Check task interaction (crewmate only)
     if (!this.player.isImposter && !prompt) {
-      // Sabotage fix takes priority over tasks
       if (this.sabotageReactor) {
         const dA = Phaser.Math.Distance.Between(px, py, this._reactorFixPoints[0].x, this._reactorFixPoints[0].y)
         const dB = Phaser.Math.Distance.Between(px, py, this._reactorFixPoints[1].x, this._reactorFixPoints[1].y)
@@ -522,7 +345,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Check task interaction (crewmate only, no active sabotage)
     if (!this.player.isImposter && !prompt && !this.sabotageReactor && !this.sabotageLights) {
       const nearTask = this.taskList
         ? this.taskList.find(t => !t.done && Phaser.Math.Distance.Between(px, py, t.x, t.y) < INTERACT_RANGE)
@@ -530,7 +352,6 @@ export class GameScene extends Phaser.Scene {
       if (nearTask) prompt = `[F] ${nearTask.label}`
     }
 
-    // Check dead body report
     if (!prompt) {
       const targets = Object.values(this.remotePlayers)
       const corpse = targets.find(p => !p.alive &&
@@ -538,7 +359,6 @@ export class GameScene extends Phaser.Scene {
       if (corpse) prompt = '[R] Báo xác'
     }
 
-    // Check emergency button (crewmate only)
     if (!prompt && !this.player.isImposter) {
       const dist = Phaser.Math.Distance.Between(px, py, this.emergencyBtnPos.x, this.emergencyBtnPos.y)
       if (dist < INTERACT_RANGE) {
@@ -547,14 +367,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (prompt) {
-      this.promptText
-        .setText(prompt)
-        .setPosition(px - this.promptText.width / 2, py - 70)
-        .setVisible(true)
-    } else {
-      this.promptText.setVisible(false)
-    }
+    this.game.registry.get('onPrompt')?.(prompt)
   }
 
   // --- VENT SYSTEM ---
@@ -733,13 +546,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   _showSabotageAlert(msg, color) {
-    const { width } = this.scale
-    const alert = this.add.text(width / 2, 80, msg, {
-      fontSize: '18px', color, fontFamily: 'Arial', fontStyle: 'bold',
-      stroke: '#000', strokeThickness: 4, align: 'center',
-      backgroundColor: '#00000099', padding: { x: 16, y: 8 }
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(35)
-    this.tweens.add({ targets: alert, alpha: 0, delay: 3000, duration: 500, onComplete: () => alert.destroy() })
+    // Chuyển đổi màu hex của Phaser sang kiểu mà React HUD hiểu (danger/info)
+    const type = (color === '#ff4444' || color === '#ff0000') ? 'danger' : 'info'
+    
+    // Gửi thông báo sang React HUD
+    this.game.registry.get('onAlert')?.(msg, type, 4000)
   }
 
   _tryFixSabotage() {
@@ -802,6 +613,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   _checkImpostorWin() {
+    // Không kiểm tra trong 3 giây đầu để tránh lỗi thiếu player list
+    if (!this._gameFullyStarted) return
+
     // Count alive crewmates vs alive impostors across all players
     const remote = Object.values(this.remotePlayers)
     const aliveCrewRemote = remote.filter(p => p.alive && !p.isImposter).length
@@ -810,18 +624,21 @@ export class GameScene extends Phaser.Scene {
     const selfImp  =  this.player.isImposter && this.player.alive ? 1 : 0
     const totalCrew = aliveCrewRemote + selfCrew
     const totalImp  = aliveImpRemote  + selfImp
-    if (totalCrew <= totalImp) {
-      // Let server be the authority — just emit, server will broadcast gameover back
+    
+    // Sửa logic: Chỉ thắng khi Crewmate không còn ai sống sót (totalCrew === 0)
+    // Điều này cho phép chơi/test 2 người (1 Imp - 1 Crew) mà không bị end game ngay
+    if (totalCrew === 0 && totalImp > 0) {
       if (this.ws) this.ws.emit('gameover', { winner: 'impostor' })
-      // Don't call _endGame locally; wait for server's gameover broadcast
     }
   }
 
   _checkWinConditions() {
     if (!this.playing) return
+    // Không kiểm tra trong 3 giây đầu
+    if (this.time.now - this.startTime < 3000) return
+
     const total = this.taskList ? this.taskList.length : NO_OF_MISSIONS
     if (this.missionsDone >= total) {
-      // Let server be the authority — just emit, server will broadcast gameover back
       if (this.ws) this.ws.emit('gameover', { winner: 'crew' })
       return
     }
@@ -882,6 +699,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   _checkAllImpostorsGone() {
+    // Không kiểm tra trong 3 giây đầu
+    if (this.time.now - this.startTime < 3000) return
+
     const remote = Object.values(this.remotePlayers)
     const aliveImpRemote = remote.filter(p => p.alive && p.isImposter).length
     const selfImp = this.player.isImposter && this.player.alive ? 1 : 0
@@ -903,22 +723,22 @@ export class GameScene extends Phaser.Scene {
 
   _tryInteractTask() {
     if (!this.taskList) return
-    // Ghost crewmates can still do tasks
     const px = this.player.x, py = this.player.y
     const task = this.taskList.find(t =>
       !t.done && Phaser.Math.Distance.Between(px, py, t.x, t.y) < INTERACT_RANGE
     )
     if (!task) return
-    this.scene.pause('Game')
-    this.scene.launch('Task', { taskId: task.id, taskName: task.label })
-    const taskScene = this.scene.get('Task')
-    taskScene.events.once('taskComplete', (taskId) => {
-      this.scene.resume('Game')
-      this._completeTask(taskId)
-    })
-    this.scene.get('Task').events.once('shutdown', () => {
-      if (this.scene.isPaused('Game')) this.scene.resume('Game')
-    })
+    
+    // Gọi React để mở Mini-game
+    this.game.registry.get('onOpenTask')?.(task.id, task.label)
+    
+    // Lắng nghe sự kiện hoàn thành từ React (chỉ đăng ký 1 lần)
+    if (!this._taskListenerRegistered) {
+      this.game.registry.set('onTaskComplete', (taskId) => {
+        this._completeTask(taskId)
+      })
+      this._taskListenerRegistered = true
+    }
   }
 
   // --- GHOST SYSTEM ---
@@ -933,10 +753,9 @@ export class GameScene extends Phaser.Scene {
     if (!this.player.isImposter && this._taskMarkers) {
       this._taskMarkers.forEach(({ task, marker }) => marker.setVisible(!task.done))
     }
-    // Update hint text
-    const hintText = this.player.isImposter
-      ? 'WASD: Di chuyển | T: Chat hồn ma'
-      : 'WASD: Di chuyển | F: Làm nhiệm vụ | T: Chat hồn ma'
+    // Update chat bridge state
+    if (this._chatBridge) this._chatBridge.alive = false
+    this.game.registry.set('chatBridge', { ...this._chatBridge, alive: false })
     // Show ghost notice with leave option
     this._ghostNotice = this.add.text(640, 300,
       '👻 Bạn đã chết\nChỉ hồn ma mới thấy bạn\n[T] Chat hồn ma  |  [L] Rời trận', {
@@ -948,103 +767,15 @@ export class GameScene extends Phaser.Scene {
     this.leaveKey = this.input.keyboard.addKey('L')
   }
 
-  // --- CHAT SYSTEM ---
-  _createChatUI() {
-    const { width, height } = this.scale
-    this._chatMessages = []
-    this._chatInputOpen = false
-
-    this._chatInputBg = this.add.rectangle(width / 2, height - 30, 500, 36, 0x000000, 0.85)
-      .setScrollFactor(0).setDepth(26).setVisible(false)
-    this._chatInputText = this.add.text(width / 2 - 240, height - 30, '', {
-      fontSize: '15px', color: '#ffffff'
-    }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(27).setVisible(false)
-    this._chatChannelLabel = this.add.text(width / 2 - 248, height - 30, '', {
-      fontSize: '13px', color: '#ffff88', fontStyle: 'bold'
-    }).setOrigin(0, 0.5).setScrollFactor(0).setDepth(27).setVisible(false)
-    this._chatInputBuffer = ''
-
-    this.add.text(10, height - 20, '[T] Chat', {
-      fontSize: '12px', color: '#888888'
-    }).setScrollFactor(0).setDepth(25)
-  }
-
-  _openChat() {
-    if (this._chatInputOpen) return
-    this._chatInputOpen = true
-    this._chatInputBuffer = ''
-    const channel = this.player.alive ? 'living' : 'ghost'
-    const label = channel === 'ghost' ? '👻 Hồn ma: ' : '💬 Chat: '
-    this._chatChannelLabel.setText(label).setVisible(true)
-    this._chatInputText.setText('').setVisible(true)
-    this._chatInputBg.setVisible(true)
-    this._chatInputBg.setFillStyle(channel === 'ghost' ? 0x110022 : 0x001122, 0.9)
-
-    this._chatCapture = (e) => {
-      if (!this._chatInputOpen) return
-      if (e.key === 'Escape') { this._closeChat(); return }
-      if (e.key === 'Enter') {
-        if (this._chatInputBuffer.trim()) this._sendChat(this._chatInputBuffer.trim(), channel)
-        this._closeChat()
-        return
-      }
-      if (e.key === 'Backspace') {
-        this._chatInputBuffer = this._chatInputBuffer.slice(0, -1)
-      } else if (e.key.length === 1 && this._chatInputBuffer.length < 60) {
-        this._chatInputBuffer += e.key
-      }
-      this._chatInputText.setText(this._chatInputBuffer)
-    }
-    this.input.keyboard.on('keydown', this._chatCapture)
-  }
-
-  _closeChat() {
-    this._chatInputOpen = false
-    this._chatInputBg.setVisible(false)
-    this._chatInputText.setVisible(false)
-    this._chatChannelLabel.setVisible(false)
-    if (this._chatCapture) this.input.keyboard.off('keydown', this._chatCapture)
-  }
-
+  // --- CHAT SYSTEM (bridged to React overlay) ---
   _sendChat(text, channel) {
-    if (!this.ws?.connected) {
-      this._addChatMessage({ name: this.playerName, color: this.playerColor, text, channel })
-      return
-    }
+    if (!this.ws?.connected) return
     this.ws.emit('chat', { text, channel, x: this.player.x, y: this.player.y })
-    this._addChatMessage({ name: this.playerName, color: this.playerColor, text, channel, self: true })
   }
 
   _receiveChatMessage(msg) {
-    if (msg.channel === 'ghost' && this.player.alive) return
-    this._addChatMessage(msg)
-  }
-
-  _addChatMessage({ name, color, text, channel }) {
-    const { height } = this.scale
-    const isGhost = channel === 'ghost'
-    const textColor = isGhost ? '#ccccff' : '#ffffff'
-    const prefix = isGhost ? '👻 ' : '💬 '
-
-    this._chatMessages.forEach(m => { m.y -= 22 })
-    while (this._chatMessages.length >= 6) {
-      const old = this._chatMessages.shift()
-      old.destroy()
-    }
-
-    const msgText = this.add.text(12, height - 60, `${prefix}${name}: ${text}`, {
-      fontSize: '14px', color: textColor,
-      stroke: '#000', strokeThickness: 3,
-      backgroundColor: isGhost ? '#11002299' : '#00000099',
-      padding: { x: 6, y: 2 }
-    }).setScrollFactor(0).setDepth(25)
-
-    this._chatMessages.push(msgText)
-    this.time.delayedCall(6000, () => {
-      const idx = this._chatMessages.indexOf(msgText)
-      if (idx !== -1) this._chatMessages.splice(idx, 1)
-      this.tweens.add({ targets: msgText, alpha: 0, duration: 500, onComplete: () => msgText.destroy() })
-    })
+    // Forward to React overlay via registry callback
+    this.game.registry.get('onChatMessage')?.(msg)
   }
 
   _endGame(winner) {
@@ -1083,7 +814,7 @@ export class GameScene extends Phaser.Scene {
     this.playerId = this.ws.id
     this._setupSocketListeners()
     this._sendPlayerState()
-    this.time.addEvent({ delay: 50, loop: true, callback: this._sendPlayerState, callbackScope: this })
+    this.time.addEvent({ delay: 30, loop: true, callback: this._sendPlayerState, callbackScope: this })
   }
 
   _setupSocketListeners() {
@@ -1163,8 +894,17 @@ export class GameScene extends Phaser.Scene {
     })
     const ids = playerList.map(p => p.id)
     Object.keys(this.remotePlayers).forEach(id => {
-      if (!ids.includes(id)) { this.remotePlayers[id].destroy(); delete this.remotePlayers[id] }
+      if (!ids.includes(id)) { 
+        this.remotePlayers[id].destroy()
+        delete this.remotePlayers[id] 
+      }
     })
+
+    // Kiểm tra điều kiện thắng/thua chỉ khi đã có đủ players (tránh false positive lúc đầu game)
+    if (this.playing && this._gameFullyStarted) {
+      this._checkAllImpostorsGone()
+      this._checkImpostorWin()
+    }
   }
 
   _sendPlayerState() {
@@ -1183,7 +923,7 @@ export class GameScene extends Phaser.Scene {
     // Ghost can still move, do tasks (crewmate), and chat
     if (!this.player.alive) {
       this.player.update(this.cursors, time)
-      Object.values(this.remotePlayers).forEach(rp => rp.updateRemote())
+      Object.values(this.remotePlayers).forEach(rp => rp.updateRemote(time.delta))
       if (Phaser.Input.Keyboard.JustDown(this.chatKey)) this._openChat()
       // Ghost crewmate can still do tasks
       if (!this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.taskKey)) this._tryInteractTask()
@@ -1192,6 +932,9 @@ export class GameScene extends Phaser.Scene {
         this._endGame(null)
       }
       this._updateInteractionPrompt()
+      if (Phaser.Input.Keyboard.JustDown(this.chatKey)) {
+        this.game.registry.get('onChatToggle')?.()
+      }
       return
     }
 
@@ -1211,11 +954,11 @@ export class GameScene extends Phaser.Scene {
 
     this.player.update(this.cursors, time)
     // Interpolate all remote players every frame
-    Object.values(this.remotePlayers).forEach(rp => rp.updateRemote())
+    Object.values(this.remotePlayers).forEach(rp => rp.updateRemote(time.delta))
     this._updateHUD()
     this._updateInteractionPrompt()
     this._updateLightsOverlay()
-    this._checkWinConditions()
+    if (this._gameFullyStarted) this._checkWinConditions()
 
     if (this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.killKey)) this._tryKill()
     if (this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.ventKey)) this._tryVent()
@@ -1230,6 +973,8 @@ export class GameScene extends Phaser.Scene {
       const fixedSabotage = this._tryFixSabotage()
       if (!fixedSabotage) this._tryInteractTask()
     }
-    if (Phaser.Input.Keyboard.JustDown(this.chatKey)) this._openChat()
+    if (Phaser.Input.Keyboard.JustDown(this.chatKey)) {
+      this.game.registry.get('onChatToggle')?.()
+    }
   }
 }

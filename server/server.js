@@ -62,6 +62,13 @@ function getRoomList() {
   }))
 }
 
+function getOnlineList() {
+  return [...players.entries()].map(([sid, p]) => ({
+    id: sid, name: p.name || '?', color: p.color || 'red',
+    roomId: p.roomId || null,
+  })).filter(p => p.name && p.name !== '')
+}
+
 function getRoomPlayers(roomId) {
   const room = rooms.get(roomId)
   if (!room) return []
@@ -157,12 +164,20 @@ io.on('connection', (socket) => {
 
   socket.emit('id', { id: socket.id })
   socket.emit('roomList', { rooms: getRoomList() })
+  // Broadcast updated online list to everyone
+  io.emit('onlineList', { users: getOnlineList() })
 
   socket.on('setProfile', ({ name, color, uuid }) => {
     const p = players.get(socket.id); if (!p) return
+    const isNew = !p.name // Kiểm tra xem đây có phải lần đầu đặt profile không
     p.name  = (name  || 'Player').slice(0, 12)
     p.color = color  || 'red'
-    p.uuid  = uuid   || socket.id  // persistent UUID from client localStorage
+    p.uuid  = uuid   || socket.id
+    io.emit('onlineList', { users: getOnlineList() })
+    
+    if (isNew) {
+      lobbySystemMsg(`👋 ${p.name} đã tham gia sảnh`)
+    }
   })
 
   // ── Chat history (client requests after UI is ready — no race condition) ──
@@ -395,8 +410,13 @@ io.on('connection', (socket) => {
   })
 
   socket.on('disconnect', () => {
+    const p = players.get(socket.id)
+    if (p && p.name) {
+      lobbySystemMsg(`🚪 ${p.name} đã rời khỏi game`)
+    }
     leaveRoom(socket.id)
     players.delete(socket.id)
+    io.emit('onlineList', { users: getOnlineList() })
     console.log(`- ${socket.id} disconnected (total: ${players.size})`)
   })
 

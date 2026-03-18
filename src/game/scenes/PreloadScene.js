@@ -95,25 +95,25 @@ export class PreloadScene extends Phaser.Scene {
       'electricity_wires','electricity_wires_connected','electricity_wires_highlight']
     itemImgs.forEach(k => this.load.image(k, `assets/Images/Items/${k}.png`))
 
-    const playerFrames = {
-      red:    { down_walk:18, up_walk:17, left_walk:17, right_walk:17 },
-      blue:   { down_walk:18, up_walk:17, left_walk:17, right_walk:17 },
-      green:  { down_walk:18, up_walk:17, left_walk:17, right_walk:17 },
-      orange: { down_walk:18, up_walk:17, left_walk:17, right_walk:17 },
-      yellow: { down_walk:18, up_walk:17, left_walk:17, right_walk:17 },
-      black:  { down_walk:1,  up_walk:1,  left_walk:1,  right_walk:1  },
-      brown:  { down_walk:1,  up_walk:1,  left_walk:1,  right_walk:1  },
-      pink:   { down_walk:1,  up_walk:1,  left_walk:1,  right_walk:1  },
-      purple: { down_walk:1,  up_walk:1,  left_walk:1,  right_walk:1  },
-      white:  { down_walk:1,  up_walk:1,  left_walk:1,  right_walk:1  },
+    // ── Character sprite sheets (3 cols × 4 rows, 32×32 each) ──────────────
+    const charSprites = {
+      pink:   'Female 06-1.png',
+      black:  'Female 07-1.png',
+      brown:  'Female 08-1.png',
+      purple: 'Female 09-1.png',
+      red:    'Male 01-1.png',
+      blue:   'Male 10-1.png',
+      green:  'Male 14-1.png',
+      orange: 'Male 16-1.png',
+      // yellow and white reuse existing sheets
+      yellow: 'Female 06-1.png',
+      white:  'Female 06-1.png',
     }
-    Object.entries(playerFrames).forEach(([c, dirs]) => {
-      const C = c.charAt(0).toUpperCase() + c.slice(1)
-      Object.entries(dirs).forEach(([d, count]) => {
-        for (let f = 1; f <= count; f++)
-          this.load.image(`${c}_${d}_${f}`, `assets/Images/Player/${C}/${c}_${d}/step${f}.png`)
+    Object.entries(charSprites).forEach(([color, file]) => {
+      this.load.spritesheet(`char_${color}`, `assets/Images/charater/${file}`, {
+        frameWidth: 32, frameHeight: 32
       })
-      this.load.image(`${c}_dead`, `assets/Images/Player/Dead/Dead${c}.png`)
+      this.load.image(`${color}_dead`, `assets/Images/Player/Dead/Dead${color}.png`)
     })
 
     this.load.tilemapTiledJSON('map', 'assets/Maps/map.json')

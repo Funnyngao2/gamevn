@@ -1,0 +1,535 @@
+/* RoomListView.css */
+
+.lobby-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 28rem;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: linear-gradient(160deg, rgba(6, 182, 212, 0.08), rgba(139, 92, 246, 0.08), rgba(10, 15, 30, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(32px);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.6), 0 0 60px rgba(6, 182, 212, 0.1);
+}
+
+.modal-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+}
+
+.input-label {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.room-name-input {
+  width: 100%;
+  border-radius: 1rem;
+  padding: 0.875rem 1.25rem;
+  color: white;
+  font-size: 1rem;
+  outline: none;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.room-name-input:focus {
+  border-color: rgba(6, 182, 212, 0.7);
+}
+
+.max-players-btn {
+  padding: 0.75rem 0;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  font-weight: 800;
+  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.max-players-btn.active {
+  background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+}
+
+.mode-selector {
+  border-radius: 1rem;
+  padding: 0.875rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mode-badge {
+  margin-left: auto;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  color: #22d3ee;
+  font-weight: 700;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.create-btn-primary {
+  width: 100%;
+  padding: 0.75rem 0;
+  border-radius: 1rem;
+  color: white;
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.025em;
+  background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+  box-shadow: 0 0 30px rgba(6, 182, 212, 0.45), 0 8px 20px rgba(139, 92, 246, 0.3);
+}
+
+/* Header Styles */
+.lobby-header {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(24px);
+  background: rgba(2, 6, 23, 0.5);
+}
+
+.header-logo-img {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 12px rgba(6, 182, 212, 0.6));
+}
+
+/* Error Toast */
+.error-toast {
+  position: relative;
+  z-index: 20;
+  margin: 0.5rem auto 0;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  color: #fca5a5;
+  font-weight: 600;
+  flex-shrink: 0;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  backdrop-filter: blur(12px);
+}
+
+/* Profile Card */
+.profile-sidebar {
+  width: 12rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%; /* Chiếm hết chiều cao */
+  overflow: hidden; /* Không để sidebar tổng bị scroll */
+}
+
+.profile-card {
+  flex-shrink: 0; /* Không bị co lại */
+  border-radius: 1rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  background: linear-gradient(160deg, var(--player-color-fade), rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--player-color-border);
+  backdrop-filter: blur(20px);
+}
+
+.profile-avatar-wrapper {
+  position: relative;
+}
+
+.profile-avatar-img-container {
+  width: 5rem;
+  height: 5rem;
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 2px solid var(--player-color-glow);
+  box-shadow: 0 0 20px var(--player-color-shadow);
+}
+
+.profile-avatar-badge {
+  position: absolute;
+  bottom: -0.25rem;
+  right: -0.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  background: linear-gradient(135deg, var(--player-hex), #8b5cf6);
+  border: 2px solid #020617;
+}
+
+.online-status-card {
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Online Players List Area */
+.online-list-container {
+  flex: 1; /* Để khu vực này chiếm toàn bộ diện tích trống còn lại */
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0; /* Quan trọng để flex child có thể scroll */
+  overflow: hidden;
+}
+
+.online-list-header {
+  font-size: 10px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.2);
+  letter-spacing: 0.1em;
+  padding-left: 0.25rem;
+  flex-shrink: 0;
+}
+
+.online-players-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-right: 0.25rem;
+}
+
+/* Custom scrollbar for player list */
+.online-players-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+.online-players-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 99px;
+}
+
+.player-item-mini {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.player-item-mini:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.player-dot-indicator {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 5px #22c55e;
+  flex-shrink: 0;
+}
+
+.back-btn-sidebar {
+  flex-shrink: 0; /* Giữ nút quay lại luôn hiển thị */
+  width: 100%;
+  padding: 0.625rem 0;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.45);
+  transition: all 0.2s;
+  margin-top: auto; /* Đẩy xuống dưới cùng của sidebar */
+  background: rgba(239, 68, 68, 0.07);
+  border: 1px solid rgba(239, 68, 68, 0.18);
+}
+
+.back-btn-sidebar:hover {
+  color: #fca5a5;
+}
+
+/* Toolbar */
+.search-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.625rem 1rem;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+}
+
+.refresh-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 0.2s;
+  flex-shrink: 0;
+  font-size: 1.125rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.create-room-btn-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.625rem 1rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(6, 182, 212, 0.3), 0 4px 10px rgba(139, 92, 246, 0.2);
+}
+
+/* Room Table */
+.room-table-container {
+  border-radius: 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1 1 0;
+  min-height: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+}
+
+.room-table-header {
+  display: grid;
+  padding: 0.75rem 1.25rem;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.2);
+  text-transform: uppercase;
+  grid-template-columns: 2fr 1.5fr 1fr 1fr;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.room-row {
+  display: grid;
+  padding: 0.875rem 1.25rem;
+  font-size: 0.875rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  grid-template-columns: 2fr 1.5fr 1fr 1fr;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.room-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateX(4px);
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .room-table-header, .room-row {
+    grid-template-columns: 2fr 0.8fr 1fr !important; /* Ẩn cột chủ phòng trên mobile */
+  }
+
+  .col-host {
+    display: none !important;
+  }
+
+  .profile-sidebar {
+    width: 100% !important;
+    height: auto !important;
+    flex-direction: row !important;
+    display: flex !important; /* Hiện lại trên mobile nhưng dạng hàng ngang */
+  }
+
+  .profile-card {
+    flex-direction: row !important;
+    width: 100% !important;
+    padding: 0.75rem !important;
+    justify-content: flex-start !important;
+    gap: 1rem !important;
+  }
+
+  .profile-card .w-full.space-y-2, 
+  .profile-card .w-full.h-px,
+  .profile-card div[style*="height: 2"] {
+    display: none !important; /* Ẩn các chi tiết thừa trên mobile */
+  }
+
+  .profile-avatar-img-container {
+    width: 3.5rem !important;
+    height: 3.5rem !important;
+  }
+
+  .online-status-card {
+    display: none !important; /* Ẩn card online trên mobile để gọn */
+  }
+
+  .back-btn-sidebar {
+    width: auto !important;
+    padding: 0.5rem 1rem !important;
+    margin-top: 0 !important;
+  }
+
+  .main-layout-content {
+    flex-direction: column !important;
+  }
+
+  .lobby-chat-container {
+    height: 150px !important; /* Thu nhỏ chat thêm một chút */
+  }
+
+  .lobby-chat-container .text-sm {
+    font-size: 0.75rem !important; /* Thu nhỏ chữ trong chat */
+  }
+
+  .create-room-btn-toolbar {
+    position: relative !important; /* Trả về vị trí cũ */
+    bottom: auto !important;
+    right: auto !important;
+    padding: 0.5rem 0.8rem !important; /* Thu nhỏ nút */
+    font-size: 0.7rem !important;
+    border-radius: 0.75rem !important;
+    box-shadow: none !important;
+  }
+
+  /* Thu nhỏ chữ toàn bộ trên mobile */
+  .profile-info-text p.text-base {
+    font-size: 0.875rem !important;
+  }
+  
+  .room-row {
+    padding: 0.6rem 0.75rem !important;
+    font-size: 0.75rem !important; /* Chữ trong bảng nhỏ lại */
+  }
+
+  .room-table-header {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.65rem !important;
+  }
+
+  .status-badge {
+    padding: 0.15rem 0.4rem !important;
+    font-size: 0.65rem !important;
+  }
+}
+
+.status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.status-badge {
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* Chat Section */
+.lobby-chat-container {
+  border-radius: 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  height: 220px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+}
+
+.chat-header {
+  padding: 0.625rem 1rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(6, 182, 212, 0.04);
+}
+
+.emoji-picker-container {
+  position: absolute;
+  bottom: 100%;
+  left: 0.75rem;
+  margin-bottom: 0.375rem;
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border-radius: 1rem;
+  z-index: 30;
+  background: rgba(8, 12, 28, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.chat-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-send-bt

@@ -2,12 +2,17 @@
 import Phaser from 'phaser'
 import { PLAYER_SPEED } from '../config.js'
 
-// Frame counts per direction (matches actual assets)
-const FRAME_COUNTS = {
-  down_walk: 18, up_walk: 17, left_walk: 17, right_walk: 17
+// Sprite sheet layout: 3 cols × 4 rows, 32×32
+// Row 0 (Down):  frames 0,1,2  — idle = frame 1
+// Row 1 (Left):  frames 3,4,5  — idle = frame 4
+// Row 2 (Right): frames 6,7,8  — idle = frame 7
+// Row 3 (Up):    frames 9,10,11 — idle = frame 10
+const DIR_FRAMES = {
+  down:  { frames: [0, 1, 2],    idle: 1  },
+  left:  { frames: [3, 4, 5],    idle: 4  },
+  right: { frames: [6, 7, 8],    idle: 7  },
+  up:    { frames: [9, 10, 11],  idle: 10 },
 }
-// Colors with only 1 frame per direction
-const SINGLE_FRAME_COLORS = new Set(['black','brown','pink','purple','white'])
 
 // Lerp factor per frame — higher = snappier, lower = smoother
 // At 60fps, 0.2 means ~3 frames to close 50% of the gap → very smooth
@@ -15,7 +20,7 @@ const LERP = 0.2
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y, color, isLocal = true) {
-    super(scene, x, y, `${color}_down_walk_1`)
+    super(scene, x, y, `char_${color}`, 1)  // frame 1 = idle down
     scene.add.existing(this)
     scene.physics.add.existing(this)
 
@@ -29,7 +34,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.playerId = null
     this.playerName = ''
 
-    this.body.setSize(30, 30).setOffset(12, 30)
+    this.body.setSize(20, 20).setOffset(6, 10)
     this.setDepth(2)
 
     // Name label
@@ -51,20 +56,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   _buildAnims(scene, color) {
-    const isSingle = SINGLE_FRAME_COLORS.has(color)
-    const dirMap = { down: 'down_walk', up: 'up_walk', left: 'left_walk', right: 'right_walk' }
-    Object.entries(dirMap).forEach(([dir, folder]) => {
-      const key = `${color}_walk_${dir}`
-      if (!scene.anims.exists(key)) {
-        const count = isSingle ? 1 : FRAME_COUNTS[folder]
-        const frames = []
-        for (let f = 1; f <= count; f++) frames.push({ key: `${color}_${folder}_${f}` })
-        scene.anims.create({ key, frames, frameRate: count > 1 ? 10 : 1, repeat: -1 })
+    const key = `char_${color}`
+    Object.entries(DIR_FRAMES).forEach(([dir, { frames, idle }]) => {
+      const walkKey = `${color}_walk_${dir}`
+      if (!scene.anims.exists(walkKey)) {
+        scene.anims.create({
+          key: walkKey,
+          frames: frames.map(f => ({ key, frame: f })),
+          frameRate: 8,
+          repeat: -1,
+        })
       }
     })
     const idleKey = `${color}_idle`
     if (!scene.anims.exists(idleKey)) {
-      scene.anims.create({ key: idleKey, frames: [{ key: `${color}_down_walk_1` }], frameRate: 1 })
+      scene.anims.create({
+        key: idleKey,
+        frames: [{ key, frame: DIR_FRAMES.down.idle }],
+        frameRate: 1,
+      })
     }
   }
 

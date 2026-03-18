@@ -54,7 +54,7 @@ const httpServer = createServer((req, res) => {
 
 const io = new Server(httpServer, {
   cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] },
-  maxHttpBufferSize: 1e7 // Tăng buffer size lên 10MB để hỗ trợ gửi audio base64
+  maxHttpBufferSize: 1e7
 })
 
 // ── In-memory state ───────────────────────────────────────────────────────────
@@ -147,7 +147,6 @@ async function saveChat(channel, roomId, senderId, name, color, text, isSystem =
     return result;
   } catch (e) {
     console.error(`❌ DB Save Error (${channel}):`, e.message);
-    // Dự phòng nếu thiếu cột audio_data
     return await dbRun(
       `INSERT INTO chat_messages (channel,room_id,sender_id,sender_name,sender_color,message,is_system)
        VALUES (?,?,?,?,?,?,?)`,
@@ -159,13 +158,11 @@ async function saveChat(channel, roomId, senderId, name, color, text, isSystem =
 function lobbySystemMsg(text) {
   const msg = makeMsg({ text, system: true })
   io.emit('lobbyChat', msg)
-  // Đã bỏ saveChat để không lưu lịch sử vào/ra sảnh
 }
 
 function roomSystemMsg(roomId, text) {
   const msg = makeMsg({ text, system: true })
   broadcastRoom(roomId, 'roomChat', msg)
-  // Đã bỏ saveChat để không lưu lịch sử hệ thống trong phòng
 }
 
 // ── Socket.IO connections ─────────────────────────────────────────────────────
@@ -240,6 +237,40 @@ io.on('connection', (socket) => {
     const p = players.get(socket.id); if (!p) return
     p.ready = !!ready
     const room = rooms.get(p.roomId); if (room) broadcastRoom(p.roomId, 'roomUpdate', { room: { ...room, players: getRoomPlayers(p.roomId) } })
+  })
+
+  socket.on('startGame', async () => {
+    const p = players.get(socket.id); if (!p?.roomId) return
+    const room = rooms.get(p.roomId); if (!room || room.started) return
+    if (room.host !== socket.id) return socket.emit('error', { msg: 'Chỉ chủ phòng mới được bắt đầu' })
+
+    const playerList = getRoomPlayers(p.roomId)
+    const nonHost = playerList.filter(pl => pl.id !== room.host)
+    const allReady = nonHost.length > 0 && nonHost.every(pl => pl.ready)
+
+    if (playerList.length < 2) return socket.emit('error', { msg: 'Cần ít nhất 2 người' })
+    if (!allReady) return socket.emit('error', { msg: 'Chờ tất cả sẵn sàng' })
+
+    room.started = true
+    dbRun('UPDATE game_rooms SET status="started" WHERE id=?', [p.roomId])
+
+    // Phân vai
+    const sids = [...room.players]
+    const imposterCount = sids.length >= 7 ? 2 : 1
+    const shuffled = shuffleArray(sids)
+    const imposters = new Set(shuffled.slice(0, imposterCount))
+
+    sids.forEach(sid => {
+      const isImposter = imposters.has(sid)
+      players.get(sid)?.socket.emit('gameStart', {
+        roomId: p.roomId, isImposter, players: playerList
+      })
+      dbRun('UPDATE game_room_players SET role=? WHERE room_id=? AND socket_id=?', 
+        [isImposter ? 'impostor' : 'crewmate', p.roomId, sid])
+    })
+
+    console.log(`🚀 Game started in room ${p.roomId}`)
+    io.emit('roomList', { rooms: getRoomList() })
   })
 
   socket.on('toggleMic', ({ isMicOn }) => {

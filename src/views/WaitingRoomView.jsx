@@ -87,15 +87,21 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
   }, [socket, room.id])
 
   function createPeer(tId, cId, stream) {
-    const p = new Peer({ initiator: true, trickle: false, stream })
+    const opts = { initiator: true, trickle: false }
+    if (stream) opts.stream = stream
+    const p = new Peer(opts)
     p.on('signal', sig => socket.emit('voiceOffer', { roomId: room.id, to: tId, offer: sig }))
     p.on('stream', st => setRemoteStreams(prev => ({ ...prev, [tId]: st })))
+    p.on('error', err => console.warn('createPeer error', err))
     return p
   }
   function addPeer(incoming, cId, stream) {
-    const p = new Peer({ initiator: false, trickle: false, stream })
+    const opts = { initiator: false, trickle: false }
+    if (stream) opts.stream = stream
+    const p = new Peer(opts)
     p.on('signal', sig => socket.emit('voiceAnswer', { roomId: room.id, to: cId, answer: sig }))
     p.on('stream', st => setRemoteStreams(prev => ({ ...prev, [cId]: st })))
+    p.on('error', err => console.warn('addPeer error', err))
     p.signal(incoming); return p
   }
 
@@ -218,7 +224,7 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
         </motion.div>
 
         <motion.div className="chat-panel">
-          <div className="chat-tabs">{['room','lobby'].map(tab => (<button key={tab} onClick={()=>setActiveTab(tab)} className="chat-tab-btn" style={{color:activeTab===tab?'#06b6d4':'rgba(255,255,255,0.25)', borderBottom:activeTab===tab?'2px solid #06b6d4':'none'}}>{tab==='room'?<Rocket size={10}/>:<MessageSquare size={10}/>} {tab.toUpperCase()}</button>))}</div>
+          <div className="chat-tabs">{['room','lobby'].map(tab => (<button key={tab} onClick={()=>setActiveTab(tab)} className="chat-tab-btn" style={{color:activeTab===tab?'#06b6d4':'rgba(255,255,255,0.25)', borderBottom:activeTab===tab?'2px solid #06b6d4':'none'}}>{tab==='room'?<Rocket size={14}/>:<MessageSquare size={14}/>} {tab.toUpperCase()}</button>))}</div>
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">{msgs.map((m, i) => <ChatLine key={i} msg={m} myId={myUUID} />)}<div ref={chatEndRef} /></div>
           <div className="chat-input-section relative">
             <AnimatePresence>{isRecording && <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:10 }} className="absolute inset-0 z-10 bg-slate-900 flex items-center px-4 gap-3"><div className="flex items-center gap-2 flex-1"><Circle size={10} fill="#ef4444" className="animate-pulse" /><span className="text-white text-xs font-bold">Ghi âm: {recordTime}s</span><div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden"><motion.div className="h-full bg-red-500" initial={{ width:0 }} animate={{ width:'100%' }} transition={{ duration:30, ease:'linear' }} /></div></div><button onClick={stopRecording} className="text-[10px] font-black uppercase text-red-400">Dừng & Gửi</button></motion.div>}</AnimatePresence>

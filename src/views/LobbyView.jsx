@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useAppStore } from '../store.js'
 import { connectSocket } from '../socket.js'
+import { AVATAR_MAP } from './MenuView.jsx'
+import { COLOR_HEX } from './lobbyShared.jsx'
 import RoomListView from './RoomListView.jsx'
 import WaitingRoomView from './WaitingRoomView.jsx'
 import './LobbyView.css'
@@ -14,6 +16,7 @@ export default function LobbyView() {
   const [isHost,      setIsHost]      = useState(false)
   const [socketId,    setSocketId]    = useState(null)
   const [error,       setError]       = useState('')
+  const [invitation,  setInvitation]  = useState(null) // Lời mời nhận được
   const socket = useRef(null)
 
   const showError = useCallback((msg) => {
@@ -28,16 +31,25 @@ export default function LobbyView() {
     s.emit('setProfile', { name: playerName, color: playerColor, uuid })
     s.off('id');        s.on('id',        d => setSocketId(d.id))
     s.off('roomList');  s.on('roomList',  d => setRooms(d.rooms))
-    s.off('onlineList');s.on('onlineList',d => setUsers(d.users)) // Lắng nghe danh sách online
+    s.off('onlineList');s.on('onlineList',d => setUsers(d.users))
     s.off('joinedRoom');s.on('joinedRoom',d => { setCurrentRoom(d.room); setIsHost(d.isHost); setRoom(d.roomId) })
     s.off('roomUpdate');s.on('roomUpdate',d => setCurrentRoom(d.room))
     s.off('leftRoom');  s.on('leftRoom',  () => { setCurrentRoom(null); setIsHost(false) })
     s.off('youAreHost');s.on('youAreHost',() => setIsHost(true))
     s.off('error');     s.on('error',     d => showError(d.msg))
     s.off('gameStart'); s.on('gameStart', d => startGame({ isImposter: d.isImposter, roomId: d.roomId, players: d.players }))
+    
+    // Lắng nghe lời mời
+    s.off('receiveInvite');
+    s.on('receiveInvite', d => {
+      setInvitation(d)
+      // Tự động đóng sau 10 giây nếu không phản hồi
+      setTimeout(() => setInvitation(null), 10000)
+    })
+
     return () => {
       s.off('id'); s.off('roomList'); s.off('onlineList'); s.off('joinedRoom'); s.off('roomUpdate')
-      s.off('leftRoom'); s.off('youAreHost'); s.off('error'); s.off('gameStart')
+      s.off('leftRoom'); s.off('youAreHost'); s.off('error'); s.off('gameStart'); s.off('receiveInvite')
     }
   }, [])
 
@@ -45,9 +57,39 @@ export default function LobbyView() {
 
   return (
     <AnimatePresence mode="wait">
+      {/* Invite Notification Popup */}
+      <AnimatePresence>
+        {invitation && !currentRoom && (
+          <motion.div className="invite-notification"
+            initial={{ x: 300, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 300, opacity: 0 }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full border-2" style={{ borderColor: COLOR_HEX[invitation.fromColor] }}>
+                <img src={`assets/Images/avatar/${AVATAR_MAP[invitation.fromColor]}`} className="w-full h-full object-cover rounded-full" alt="" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Lời mời mới</p>
+                <p className="text-white text-xs font-black">
+                  <span style={{ color: COLOR_HEX[invitation.fromColor] }}>{invitation.fromName}</span> mời bạn vào phòng <span className="text-cyan-400">"{invitation.roomName}"</span>
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button className="flex-1 py-1.5 rounded-lg bg-emerald-500 text-black text-[10px] font-black uppercase"
+                onClick={() => { send('joinRoom', { roomId: invitation.roomId }); setInvitation(null) }}>
+                Chấp nhận
+              </button>
+              <button className="px-3 py-1.5 rounded-lg bg-white/5 text-white/40 text-[10px] font-bold"
+                onClick={() => setInvitation(null)}>
+                Từ chối
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {currentRoom ? (
         <WaitingRoomView key="waiting"
-          room={currentRoom} isHost={isHost} socketId={socketId}
+          room={currentRoom} users={users} isHost={isHost} socketId={socketId}
           socket={socket.current} error={error}
           onLeave={() => send('leaveRoom')}
           onReady={r => send('setReady', { ready: r })}

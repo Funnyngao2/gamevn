@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Search, X, RotateCw, Plus, Mic } from 'lucide-react'
 import { getSocket } from '../socket.js'
 import { AVATAR_MAP } from './MenuView.jsx'
 import { COLOR_HEX, SceneBg, ChatLine, normalizeMsg } from './lobbyShared.jsx'
@@ -15,9 +16,40 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
   const [chatInput,  setChatInput]  = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [showEmoji,  setShowEmoji]  = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordTime, setRecordTime] = useState(0)
+  const mediaRecorder = useRef(null)
+  const audioChunks = useRef([])
+  const recordTimer = useRef(null)
   const chatEndRef = useRef(null)
   const inputRef   = useRef(null)
   const socket = useRef(getSocket())
+  
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaRecorder.current = new MediaRecorder(stream)
+      audioChunks.current = []
+      mediaRecorder.current.ondataavailable = (e) => audioChunks.current.push(e.data)
+      mediaRecorder.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' })
+        const reader = new FileReader()
+        reader.readAsDataURL(audioBlob)
+        reader.onloadend = () => {
+          socket.current.emit('lobbyChat', { text: '', audioData: reader.result })
+        }
+        stream.getTracks().forEach(t => t.stop())
+      }
+      mediaRecorder.current.start(); setIsRecording(true); setRecordTime(0)
+      recordTimer.current = setInterval(() => setRecordTime(p => p + 1), 1000)
+    } catch (err) { alert("Lỗi ghi âm") }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorder.current && isRecording) {
+      mediaRecorder.current.stop(); setIsRecording(false); clearInterval(recordTimer.current)
+    }
+  }
   const myUUID = localStorage.getItem('playerUUID')
   const hex = COLOR_HEX[playerColor] || '#8b5cf6'
 
@@ -33,7 +65,7 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
   useEffect(() => {
     const s = socket.current
     s.off('lobbyChat'); s.off('chatHistory')
-    s.on('lobbyChat',   d => setLobbyMsgs(p => [...p.slice(-99), d]))
+    s.on('lobbyChat',   d => setLobbyMsgs(p => [...p.slice(-99), normalizeMsg(d)]))
     s.on('chatHistory', d => { if (d.channel === 'lobby') setLobbyMsgs(d.messages.map(normalizeMsg)) })
     s.emit('getChatHistory', { channel: 'lobby' })
     return () => { s.off('lobbyChat'); s.off('chatHistory') }
@@ -103,8 +135,9 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
               </div>
               <motion.button onClick={() => { onCreate(roomName || `${playerName}'s Room`, maxPlayers); setShowCreate(false) }}
                 whileHover={{ scale:1.02 }} whileTap={{ scale:0.97 }}
-                className="create-btn-primary">
-                🚀 Tạo phòng
+                className="create-btn-primary flex items-center justify-center gap-2">
+                <img src="assets/Images/logo/logo.png" alt="" className="w-4 h-4 object-contain brightness-0 invert" />
+                Tạo phòng
               </motion.button>
             </motion.div>
           </motion.div>
@@ -194,21 +227,25 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
           {/* Toolbar */}
           <div className="flex items-center gap-2 shrink-0">
             <div className="search-container">
-              <span className="text-white/30 shrink-0">🔍</span>
+              <Search size={14} className="text-white/30 shrink-0" />
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Tìm phòng..."
                 className="flex-1 bg-transparent text-white text-sm placeholder-white/25 outline-none min-w-0" />
-              {search && <button onClick={() => setSearch('')} className="text-white/30 hover:text-white/60 shrink-0 text-xs">✕</button>}
+              {search && (
+                <button onClick={() => setSearch('')} className="text-white/30 hover:text-white/60 shrink-0">
+                  <X size={12} />
+                </button>
+              )}
             </div>
             <motion.button onClick={onRefresh} whileHover={{ rotate:180 }} whileTap={{ scale:0.9 }}
               transition={{ duration:0.3 }}
               className="refresh-btn">
-              ↻
+              <RotateCw size={16} />
             </motion.button>
             <motion.button onClick={() => setShowCreate(true)}
               whileHover={{ scale:1.03 }} whileTap={{ scale:0.97 }}
               className="create-room-btn-toolbar">
-              <span className="text-[10px]">✦</span> Tạo phòng
+              <Plus size={12} /> Tạo phòng
             </motion.button>
           </div>
 
@@ -223,7 +260,7 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
             <div className="overflow-y-auto flex-1 min-h-0">
               {filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 py-10">
-                  <span className="text-5xl">🚀</span>
+                  <img src="assets/Images/logo/logo.png" alt="" className="w-16 h-16 object-contain opacity-20" />
                   <p className="text-white/20 text-base font-bold">Chưa có phòng nào</p>
                 </div>
               ) : filtered.map((room, i) => {
@@ -294,17 +331,39 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
                   </motion.div>
                 )}
               </AnimatePresence>
-              <div className="chat-input-wrapper">
+              <div className="chat-input-wrapper relative">
+                <AnimatePresence>
+                  {isRecording && (
+                    <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:10 }}
+                      className="absolute inset-0 z-10 bg-slate-900 rounded-xl flex items-center px-4 gap-3">
+                      <div className="flex items-center gap-2 flex-1">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                        <span className="text-white text-[10px] font-bold">Ghi âm: {recordTime}s</span>
+                        <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+                          <motion.div className="h-full bg-red-500" initial={{ width:0 }} animate={{ width:'100%' }} transition={{ duration:30, ease:'linear' }} />
+                        </div>
+                      </div>
+                      <button onClick={stopRecording} className="text-[9px] font-black uppercase text-red-400">Dừng & Gửi</button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <button onClick={() => setShowEmoji(v => !v)}
                   className="text-lg shrink-0 opacity-50 hover:opacity-100 transition-opacity hover:scale-110">😊</button>
                 <input ref={inputRef} value={chatInput} onChange={e => setChatInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && sendChat()}
                   placeholder="Nhắn tin với mọi người..."
                   className="flex-1 bg-transparent text-white text-sm placeholder-white/25 outline-none" />
-                <motion.button onClick={sendChat} whileHover={{ scale:1.1 }} whileTap={{ scale:0.9 }}
-                  className="chat-send-btn">
-                  ➤
-                </motion.button>
+                
+                <div className="flex items-center gap-1">
+                  <button onClick={startRecording} className="p-1.5 text-white/30 hover:text-cyan-400">
+                    <Mic size={16} />
+                  </button>
+                  <motion.button onClick={sendChat} whileHover={{ scale:1.1 }} whileTap={{ scale:0.9 }}
+                    className="chat-send-btn">
+                    ➤
+                  </motion.button>
+                </div>
               </div>
             </div>
           </div>

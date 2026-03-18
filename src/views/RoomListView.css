@@ -532,4 +532,17 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.chat-send-bt
+.chat-send-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  background: linear-gradient(135deg, #06b6d4, #8b5cf6);
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);
+}

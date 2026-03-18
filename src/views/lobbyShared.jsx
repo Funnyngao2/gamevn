@@ -1,4 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
+import WaveSurfer from 'wavesurfer.js'
+import { Play, Pause, Mic } from 'lucide-react'
+import './Chat.css'
 
 export const COLOR_HEX = {
   red:'#e74c3c', blue:'#3b82f6', green:'#22c55e', orange:'#f97316',
@@ -7,8 +10,15 @@ export const COLOR_HEX = {
 }
 
 export function normalizeMsg(m) {
-  return { senderId: m.sender_id, name: m.sender_name, color: m.sender_color,
-           text: m.message, system: !!m.is_system, ts: m.ts }
+  return { 
+    senderId: m.sender_id || m.senderId, 
+    name: m.sender_name || m.name, 
+    color: m.sender_color || m.color,
+    text: m.message || m.text, 
+    system: !!(m.is_system || m.system), 
+    audio: m.audio_data || m.audioData,
+    ts: m.ts 
+  }
 }
 
 export function SceneBg() {
@@ -44,20 +54,94 @@ export function SceneBg() {
 
 export function ChatLine({ msg, myId }) {
   if (msg.system) return (
-    <div className="text-[11px] leading-relaxed py-0.5 flex items-center gap-1.5">
-      <span className="font-black px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-tighter"
-        style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
-        Hệ thống
-      </span>
-      <span className="text-white/40 italic">{msg.text}</span>
+    <div className="system-message-row">
+      <img src="assets/Images/logo/logo.png" alt="logo" className="w-3.5 h-3.5 object-contain" />
+      <span className="system-badge">Hệ thống</span>
+      <span className="system-text">{msg.text}</span>
     </div>
   )
+
   const isSelf = msg.senderId === myId
   const col = COLOR_HEX[msg.color] || '#888'
+
   return (
-    <div className="text-[13px] leading-relaxed py-0.5">
-      <span className="font-extrabold mr-1.5" style={{ color: col }}>{isSelf ? 'Bạn' : msg.name}:</span>
-      <span className="text-white/85">{msg.text}</span>
+    <div className={`chat-line-wrapper ${isSelf ? 'self' : 'others'}`}>
+      <div className="chat-meta">
+        <span className="chat-author-name" style={{ color: col }}>
+          {isSelf ? 'Bạn' : msg.name}
+        </span>
+        <span className="chat-timestamp">{msg.ts || ''}</span>
+        {msg.audio && <Mic size={10} className="text-cyan-400/40" />}
+      </div>
+      
+      {msg.audio ? (
+        <VoicePlayer audioData={msg.audio} color={col} isSelf={isSelf} />
+      ) : (
+        <div className={`chat-bubble ${isSelf ? 'self' : 'others'}`}>
+          {msg.text}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function VoicePlayer({ audioData, color, isSelf }) {
+  const containerRef = useRef(null)
+  const waveRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isReady, setIsReady] = useState(false)
+  const [duration, setDuration] = useState('0:00')
+
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const ws = WaveSurfer.create({
+      container: containerRef.current,
+      waveColor: 'rgba(255,255,255,0.15)',
+      progressColor: color,
+      cursorColor: 'transparent',
+      barWidth: 3,
+      barGap: 4,
+      barRadius: 4,
+      height: 32,
+      responsive: true,
+      normalize: true,
+      partialRender: true,
+    })
+
+    ws.load(audioData)
+    ws.on('ready', () => {
+      setIsReady(true)
+      const d = ws.getDuration()
+      setDuration(`${Math.floor(d / 60)}:${Math.floor(d % 60).toString().padStart(2, '0')}`)
+    })
+    ws.on('play', () => setIsPlaying(true))
+    ws.on('pause', () => setIsPlaying(false))
+    ws.on('finish', () => { setIsPlaying(false); ws.setTime(0) })
+    waveRef.current = ws
+
+    return () => ws.destroy()
+  }, [audioData, color])
+
+  const togglePlay = () => isReady && waveRef.current?.playPause()
+
+  return (
+    <div className={`voice-player-bubble ${isSelf ? 'self' : 'others'}`}>
+      <div className="voice-controls">
+        <button 
+          onClick={togglePlay}
+          disabled={!isReady}
+          className="btn-play-voice"
+          style={{ color: color }}
+        >
+          {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="ml-0.5" />}
+        </button>
+        <div ref={containerRef} className="voice-waveform-container" />
+      </div>
+      <div className="voice-info-footer">
+        <span className="voice-tag">Voice Message</span>
+        <span className="voice-duration">{duration}</span>
+      </div>
     </div>
   )
 }

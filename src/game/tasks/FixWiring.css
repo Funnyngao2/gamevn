@@ -1,0 +1,132 @@
+.fix-wiring-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  padding: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.05);
+  border-radius: 40px;
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(24px);
+}
+
+.fix-wiring-header {
+  text-align: center;
+}
+
+.fix-wiring-title {
+  margin: 0;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+}
+
+.fix-wiring-subtitle {
+  margin: 8px 0 0;
+  color: rgba(34, 211, 238, 0.5);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+.fix-wiring-board {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  width: 450px;
+  height: 320px;
+  padding: 24px 32px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.fix-wiring-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.fix-wiring-column {
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 8px 0;
+}
+
+.fix-wiring-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 40px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+  transition: transform 0.18s ease;
+}
+
+.fix-wiring-node:hover {
+  transform: scale(1.1);
+}
+
+.fix-wiring-node-left {
+  border-radius: 0 999px 999px 0;
+}
+
+.fix-wiring-node-right {
+  border-radius: 999px 0 0 999px;
+}
+
+.fix-wiring-node-active {
+  transform: scale(1.25);
+}
+
+.fix-wiring-node-core {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.fix-wiring-node-core-pulse {
+  animation: fix-wiring-pulse 1.2s infinite;
+}
+
+.fix-wiring-progress-track {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.fix-wiring-progress-fill {
+  height: 100%;
+  background: #06b6d4;
+}
+
+@keyframes fix-wiring-pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+@media (max-width: 640px) {
+  .fix-wiring-root {
+    padding: 28px;
+  }
+
+  .fix-wiring-board {
+    width: 360px;
+    height: 280px;
+    padding: 20px 24px;
+  }
+}

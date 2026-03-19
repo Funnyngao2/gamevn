@@ -1,13 +1,10 @@
 import { useMemo, useEffect, useRef, useState } from 'react'
 import WaveSurfer from 'wavesurfer.js'
 import { Play, Pause, Mic } from 'lucide-react'
+import { PLAYER_COLORS_HEX as COLOR_HEX } from '../config.js'
 import './Chat.css'
 
-export const COLOR_HEX = {
-  red:'#e74c3c', blue:'#3b82f6', green:'#22c55e', orange:'#f97316',
-  yellow:'#eab308', pink:'#ec4899', black:'#94a3b8', brown:'#b45309',
-  purple:'#a855f7', white:'#f1f5f9',
-}
+export { COLOR_HEX }
 
 export function normalizeMsg(m) {
   return { 
@@ -21,20 +18,31 @@ export function normalizeMsg(m) {
   }
 }
 
-export function SceneBg() {
-  const orbs = useMemo(() => [
-    { cx:'10%', cy:'15%', r:380, c:'#0ea5e9' },
-    { cx:'85%', cy:'75%', r:320, c:'#8b5cf6' },
-    { cx:'65%', cy:'8%',  r:240, c:'#06b6d4' },
-    { cx:'3%',  cy:'85%', r:200, c:'#6366f1' },
-    { cx:'50%', cy:'50%', r:260, c:'#a855f7' },
-  ], [])
+export function SceneBg({ accent }) {
+  const orbs = useMemo(() => {
+    if (accent) {
+      return [
+        { cx: '15%', cy: '20%', r: 320, c: accent },
+        { cx: '85%', cy: '75%', r: 280, c: accent },
+        { cx: '50%', cy: '90%', r: 200, c: accent },
+      ]
+    }
+    return [
+      { cx:'10%', cy:'15%', r:380, c:'#0ea5e9' },
+      { cx:'85%', cy:'75%', r:320, c:'#8b5cf6' },
+      { cx:'65%', cy:'8%',  r:240, c:'#06b6d4' },
+      { cx:'3%',  cy:'85%', r:200, c:'#6366f1' },
+      { cx:'50%', cy:'50%', r:260, c:'#a855f7' },
+    ]
+  }, [accent])
+  
   const stars = useMemo(() => Array.from({ length: 120 }, (_, i) => ({
     id: i, x: Math.random()*100, y: Math.random()*100,
     s: Math.random()*1.8+0.4, dur: Math.random()*3000+1500,
   })), [])
+  
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
       <div className="absolute inset-0" style={{ background:'linear-gradient(135deg,#020617 0%,#080d1a 40%,#050b18 100%)' }} />
       {orbs.map((o, i) => (
         <div key={i} className="absolute rounded-full"

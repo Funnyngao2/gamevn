@@ -34,12 +34,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.playerId = null
     this.playerName = ''
 
+    // Scale character up so players are readable on the large map.
+    this.setScale(2)
     this.body.setSize(20, 20).setOffset(6, 10)
     this.setDepth(2)
 
     // Name label
     this.nameLabel = scene.add.text(x, y - 40, '', {
-      fontSize: '14px', color: '#ffffff', stroke: '#000', strokeThickness: 3
+      fontSize: '18px', color: '#ffffff', stroke: '#000', strokeThickness: 4
     }).setOrigin(0.5).setDepth(3)
 
     this._buildAnims(scene, color)
@@ -85,7 +87,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   // Called every frame by GameScene.update() for local player
   update(cursors, time) {
-    if (!this.isLocal || !this.alive) return
+    if (!this.isLocal) return
 
     let vx = 0, vy = 0
 
@@ -97,12 +99,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
 
-    this.setVelocity(vx, vy)
     this._moving = vx !== 0 || vy !== 0
+
+    if (this.alive) {
+      this.setVelocity(vx, vy)
+    } else {
+      // Ghost movement is manual because the physics body is disabled to pass through walls.
+      const dt = (this.scene?.game?.loop?.delta || 16.67) / 1000
+      this.x += vx * dt
+      this.y += vy * dt
+      const bounds = this.scene?.physics?.world?.bounds
+      if (bounds) {
+        this.x = Phaser.Math.Clamp(this.x, bounds.x, bounds.x + bounds.width)
+        this.y = Phaser.Math.Clamp(this.y, bounds.y, bounds.y + bounds.height)
+      }
+    }
 
     if (this._moving) {
       this.play(`${this.color}_walk_${this._dir}`, true)
-      if (time - this._footTimer > 300) {
+      if (this.alive && time - this._footTimer > 300) {
         this._footTimer = time
         this._footIndex = (this._footIndex + 1) % 8
         const key = `footstep0${this._footIndex + 1}`
@@ -114,7 +129,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.play(`${this.color}_idle_${this._dir}`, true)
     }
 
-    this.nameLabel.setPosition(this.x, this.y - 40)
+    this.nameLabel.setPosition(this.x, this.y - 54)
   }
 
   // Called every frame by GameScene.update() for remote players — smooth lerp
@@ -148,7 +163,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
-    this.nameLabel.setPosition(this.x, this.y - 40)
+    this.nameLabel.setPosition(this.x, this.y - 54)
   }
 
   // Called when server sends new position data — only updates target, no teleport

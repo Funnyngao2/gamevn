@@ -6,6 +6,7 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills'
 export default defineConfig({
   server: {
     port: 8080,
+    host: true,
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },

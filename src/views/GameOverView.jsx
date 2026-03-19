@@ -3,180 +3,260 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '../store.js'
 import { getSocket } from '../socket.js'
 import { AVATAR_MAP } from './MenuView.jsx'
-
-const COLOR_HEX = {
-  red:'#e74c3c', blue:'#3b82f6', green:'#22c55e', orange:'#f97316',
-  yellow:'#eab308', pink:'#ec4899', black:'#94a3b8', brown:'#b45309',
-  purple:'#a855f7', white:'#f1f5f9',
-}
+import { SceneBg, COLOR_HEX } from './lobbyShared.jsx'
+import { Trophy, Skull, LogOut, Home } from 'lucide-react'
+import './GameOverView.css'
 
 export default function GameOverView() {
-  const { gameResult, gameData, playerName, playerColor, returnToLobby, setView } = useAppStore()
+  const { gameResult, gameData, returnToLobby, setView } = useAppStore()
   const [countdown, setCountdown] = useState(15)
-  const [phase, setPhase] = useState('reveal') // reveal → stats
+  const [phase, setPhase] = useState('reveal')
 
-  const winner   = gameResult?.winner
-  const players  = gameData?.players || []
-  
-  // Xác định vai trò của bản thân
+  const rawWinner = gameResult?.winner
+  const winner = rawWinner === 'imposter' ? 'impostor' : rawWinner
+  const players = gameResult?.players || gameData?.players || []
+
   const myUUID = localStorage.getItem('playerUUID')
-  const me = players.find(p => p.uuid === myUUID)
-  const myRole = me?.isImposter ? 'impostor' : 'crew'
-  
-  // Bạn thắng nếu cùng phe với winner
+  const me = players.find(p => p.uuid === myUUID || String(p.id) === String(gameResult?.localPlayerId))
+  const myRole = typeof gameData?.isImposter === 'boolean'
+    ? (gameData.isImposter ? 'impostor' : 'crew')
+    : (me?.isImposter ? 'impostor' : 'crew')
+
   const isVictory = winner === myRole
   const isCrewWin = winner === 'crew'
-  const isLeft    = winner === null
+  const isLeft = winner === null
 
-  // Màu sắc chủ đạo dựa trên Victory/Defeat
-  const accent  = isLeft ? '#94a3b8' : isVictory ? '#22c55e' : '#ef4444'
-  const accentB = isLeft ? '#64748b' : isVictory ? '#16a34a' : '#b91c1c'
+  const accent = isLeft ? '#94a3b8' : isVictory ? '#22c55e' : '#ef4444'
   const statusText = isLeft ? 'RỜI TRẬN' : isVictory ? 'CHIẾN THẮNG' : 'THẤT BẠI'
+  const subText = isLeft ? 'Bạn đã rời khỏi trận đấu' : isCrewWin ? 'Phi hành đoàn đã chiến thắng!' : 'Kẻ phản bội đã chiến thắng!'
+  const StatusIcon = isLeft ? LogOut : isVictory ? Trophy : Skull
+  const resultTopText = winner === 'impostor'
+    ? 'Impostors Win'
+    : winner === 'crew'
+      ? 'Crewmates Win'
+      : statusText
+
+  const impostorPlayers = useMemo(() => players.filter(p => p.isImposter), [players])
+  const crewPlayers = useMemo(() => players.filter(p => !p.isImposter), [players])
 
   useEffect(() => {
-    const t = setTimeout(() => setPhase('stats'), 2000)
+    const t = setTimeout(() => setPhase('stats'), 2500)
     return () => clearTimeout(t)
   }, [])
 
   useEffect(() => {
     const t = setInterval(() => {
       setCountdown(c => {
-        if (c <= 1) { clearInterval(t); returnToLobby(); return 0 }
+        if (c <= 1) {
+          clearInterval(t)
+          returnToLobby()
+          return 0
+        }
         return c - 1
       })
     }, 1000)
     return () => clearInterval(t)
-  }, [])
+  }, [returnToLobby])
 
-  const handleMenu = () => { getSocket()?.disconnect(); setView('menu') }
+  const handleMenu = () => {
+    getSocket()?.disconnect()
+    setView('menu')
+  }
 
-  const stars = useMemo(() => Array.from({ length: 120 }, (_, i) => ({
-    id: i, x: Math.random()*100, y: Math.random()*100,
-    s: Math.random()*1.8+0.4, dur: Math.random()*3000+1500,
-  })), [])
-
-  const particles = useMemo(() => Array.from({ length: 30 }, (_, i) => ({
-    id: i, x: Math.random()*100, delay: Math.random()*2, dur: Math.random()*2+2,
-    size: Math.random()*6+2, color: [accent, accentB, '#fff'][Math.floor(Math.random()*3)],
+  const floatParticles = useMemo(() => Array.from({ length: 20 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    delay: Math.random() * 1.5,
+    dur: Math.random() * 2 + 2.5,
+    size: Math.random() * 8 + 4,
+    color: accent,
   })), [accent])
 
   return (
-    <div className="w-screen h-screen flex flex-col items-center justify-center relative overflow-hidden"
-      style={{ background: '#000' }}>
+    <div className="gameover-root">
+      <SceneBg accent={accent} />
 
-      {/* Stars Background */}
-      <div className="absolute inset-0 pointer-events-none opacity-40">
-        {stars.map(s => (
-          <div key={s.id} className="absolute rounded-full bg-white animate-pulse"
-            style={{ left:`${s.x}%`, top:`${s.y}%`, width:s.s, height:s.s, animationDuration:`${s.dur}ms` }} />
+      <div
+        className="gameover-ambient"
+        style={{ background: `radial-gradient(ellipse 80% 60% at 50% 40%, ${accent}08 0%, transparent 60%)` }}
+      />
+
+      <div className="gameover-particles">
+        {floatParticles.map(p => (
+          <motion.div
+            key={p.id}
+            className="gameover-particle"
+            style={{ left: `${p.x}%`, bottom: -20, width: p.size, height: p.size, background: p.color }}
+            animate={{ y: [-20, -window.innerHeight - 50], opacity: [0.15, 0] }}
+            transition={{ delay: p.delay, duration: p.dur, repeat: Infinity, ease: 'linear' }}
+          />
         ))}
       </div>
 
-      {/* Shake effect on reveal */}
-      <motion.div className="absolute inset-0 pointer-events-none"
-        animate={phase === 'reveal' ? { x: [-2, 2, -2, 2, 0], y: [1, -1, 1, -1, 0] } : {}}
-        transition={{ duration: 0.1, repeat: 10 }} />
-
-      {/* Ambient glow */}
-      <div className="absolute inset-0 pointer-events-none"
-        style={{ background:`radial-gradient(circle at 50% 50%, ${accent}15 0%, transparent 70%)` }} />
-
-      {/* Floating particles */}
-      {phase === 'stats' && particles.map(p => (
-        <motion.div key={p.id} className="absolute rounded-full pointer-events-none"
-          style={{ left:`${p.x}%`, bottom:0, width:p.size, height:p.size, background:p.color, opacity:0.4 }}
-          animate={{ y: [0, -window.innerHeight], opacity: [0.4, 0] }}
-          transition={{ delay: p.delay, duration: p.dur, repeat: Infinity, ease: 'linear' }} />
-      ))}
-
-      {/* ── CONTENT ── */}
-      <div className="relative z-10 flex flex-col items-center w-full max-w-4xl px-6">
-        
-        {/* BIG REVEAL TEXT */}
+      <div className="gameover-content">
         <AnimatePresence mode="wait">
           {phase === 'reveal' ? (
-            <motion.div key="status"
-              initial={{ scale: 2, opacity: 0, filter: 'blur(20px)' }}
-              animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-              exit={{ y: -50, opacity: 0 }}
-              transition={{ duration: 0.5, type: 'spring', damping: 12 }}
-              className="flex flex-col items-center">
-              <h1 className="text-8xl font-black italic tracking-tighter"
-                style={{ color: accent, textShadow: `0 0 30px ${accent}, 0 0 60px ${accent}40` }}>
-                {statusText}
-              </h1>
-              <p className="text-white/40 text-sm tracking-[0.5em] mt-4 font-bold uppercase">
-                {isCrewWin ? 'Phi hành đoàn chiến thắng' : 'Kẻ phản bội chiến thắng'}
-              </p>
+            <motion.div
+              key="reveal"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, y: -30 }}
+              className="gameover-reveal-wrap">
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0, rotateY: -90 }}
+                animate={{ scale: 1, opacity: 1, rotateY: 0 }}
+                transition={{ type: 'spring', damping: 15, stiffness: 120 }}
+                className="gameover-reveal-inner">
+                <motion.div
+                  animate={isVictory ? { scale: [1, 1.05, 1], y: [0, -4, 0] } : {}}
+                  transition={{ duration: 1.2, repeat: Infinity }}
+                  className="gameover-icon-shell"
+                  style={{
+                    background: `linear-gradient(145deg, ${accent}30, ${accent}08)`,
+                    borderColor: `${accent}60`,
+                    boxShadow: `0 0 60px ${accent}40, inset 0 0 30px ${accent}15`,
+                  }}>
+                  <StatusIcon size={56} strokeWidth={2} style={{ color: accent }} />
+                </motion.div>
+
+                <motion.h1
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="gameover-status-title"
+                  style={{ color: accent, textShadow: `0 0 30px ${accent}80, 0 0 60px ${accent}40` }}>
+                  {statusText}
+                </motion.h1>
+
+                <motion.p
+                  initial={{ y: 10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.5 }}
+                  className="gameover-status-subtitle">
+                  {subText}
+                </motion.p>
+              </motion.div>
             </motion.div>
           ) : (
-            <motion.div key="stats"
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center w-full">
-              
-              <div className="flex flex-col items-center gap-2 mb-8">
-                <h2 className="text-4xl font-black italic" style={{ color: accent }}>{statusText}</h2>
-                <div style={{ height: 2, width: 60, background: accent, borderRadius: 99, opacity: 0.5 }} />
+            <motion.div
+              key="stats"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="gameover-stats-wrap">
+              <div className="gameover-header">
+                <img src="assets/Images/logo/logo.png" alt="" className="gameover-logo" />
+                <h2 className="gameover-result-top" style={{ color: accent }}>
+                  <StatusIcon size={28} strokeWidth={2.5} />
+                  <span>{resultTopText}</span>
+                </h2>
+                <div
+                  className="gameover-header-line"
+                  style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
+                />
               </div>
 
-              {/* Player list grid */}
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
-                {players.map((p, i) => {
-                  const pHex = COLOR_HEX[p.color] || '#888'
-                  const isMe = p.uuid === myUUID
-                  const isImp = p.isImposter
-                  return (
-                    <motion.div key={i}
-                      initial={{ opacity: 0, x: -15 }} animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                      className="relative overflow-hidden rounded-xl p-3 flex items-center gap-3"
-                      style={{ background: isMe ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
-                               border: `1px solid ${isMe ? pHex + '40' : 'rgba(255,255,255,0.05)'}` }}>
-                      
-                      {/* Impostor highlight background */}
-                      {isImp && <div className="absolute inset-0 bg-red-500/5 pointer-events-none" />}
-                      
-                      <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-black/40 p-0.5"
-                        style={{ border: `2px solid ${pHex}` }}>
-                        <img src={`assets/Images/avatar/${AVATAR_MAP[p.color] || 'nam1.png'}`} alt=""
-                          className="w-full h-full object-cover" />
-                      </div>
+              <div className="gameover-groups">
+                {[{
+                  title: 'Impostors',
+                  players: impostorPlayers,
+                  titleColor: '#f87171',
+                  badge: '☠',
+                }, {
+                  title: 'Crewmates',
+                  players: crewPlayers,
+                  titleColor: '#22d3ee',
+                  badge: '👨‍🚀',
+                }].map((group, gIdx) => (
+                  <motion.div
+                    key={group.title}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: gIdx * 0.08 }}
+                    className="gameover-group-card">
+                    <div className="gameover-group-header">
+                      <span className="gameover-group-badge">{group.badge}</span>
+                      <h3 className="gameover-group-title" style={{ color: group.titleColor }}>
+                        {group.title} ({group.players.length})
+                      </h3>
+                    </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-white text-sm font-bold truncate">{p.name}</p>
-                          {isMe && <span className="bg-white/10 text-[8px] px-1 rounded uppercase font-black">Bạn</span>}
-                        </div>
-                        <p className="text-[10px] font-black uppercase tracking-wider mt-0.5"
-                          style={{ color: isImp ? '#ef4444' : '#06b6d4' }}>
-                          {isImp ? '☠ Impostor' : '👨‍🚀 Crewmate'}
-                        </p>
-                      </div>
-                    </motion.div>
-                  )
-                })}
+                    <div className="gameover-group-list">
+                      {group.players.length === 0 && (
+                        <p className="gameover-empty-text">No players</p>
+                      )}
+
+                      {group.players.map((p, i) => {
+                        const pHex = COLOR_HEX[p.color] || '#888'
+                        const isMe = p.uuid === myUUID
+                        const isImp = p.isImposter
+
+                        return (
+                          <motion.div
+                            key={`${group.title}-${p.uuid || p.id || i}`}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.05 * i }}
+                            className="gameover-player-row"
+                            style={{
+                              background: isMe ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.04)',
+                              borderColor: isMe ? `${pHex}55` : 'rgba(255,255,255,0.08)',
+                            }}>
+                            <div
+                              className="gameover-player-avatar-wrap"
+                              style={{ borderColor: pHex, boxShadow: `0 0 10px ${pHex}40` }}>
+                              <img
+                                src={`assets/Images/avatar/${AVATAR_MAP[p.color] || 'nam1.png'}`}
+                                alt=""
+                                className="gameover-player-avatar"
+                              />
+                            </div>
+
+                            <div className="gameover-player-meta">
+                              <div className="gameover-player-name-row">
+                                <p className="gameover-player-name">{p.name}</p>
+                                {isMe && <span className="gameover-you-badge">You</span>}
+                              </div>
+                              <p
+                                className="gameover-player-role"
+                                style={{ color: isImp ? '#f87171' : '#22d3ee' }}>
+                                {isImp ? 'Impostor' : 'Crewmate'}
+                              </p>
+                            </div>
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+                  </motion.div>
+                ))}
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-3 w-full max-w-md">
-                <motion.button onClick={returnToLobby}
-                  whileHover={{ scale: 1.02, y: -2 }} whileTap={{ scale: 0.98 }}
-                  className="flex-1 py-4 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all"
-                  style={{ background: `linear-gradient(135deg, ${accent}, ${accentB})`,
-                           color: isVictory ? '#000' : '#fff',
-                           boxShadow: `0 8px 30px ${accent}30` }}>
-                  Quay lại phòng ({countdown}s)
+              <div className="gameover-actions">
+                <motion.button
+                  onClick={returnToLobby}
+                  whileHover={{ scale: 1.03, boxShadow: `0 12px 40px ${accent}40` }}
+                  whileTap={{ scale: 0.98 }}
+                  className="gameover-primary-button"
+                  style={{
+                    background: `linear-gradient(135deg, ${accent}, ${accent}dd)`,
+                    color: isVictory ? '#000' : '#fff',
+                    boxShadow: `0 8px 32px ${accent}35`,
+                  }}>
+                  <Home size={18} />
+                  <span>Quay lại phòng ({countdown}s)</span>
                 </motion.button>
-                <motion.button onClick={handleMenu}
-                  whileHover={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-                  className="px-6 py-4 rounded-xl font-bold text-xs text-white/40 uppercase tracking-widest border border-white/10 transition-all">
+
+                <motion.button
+                  onClick={handleMenu}
+                  whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.12)' }}
+                  whileTap={{ scale: 0.98 }}
+                  className="gameover-secondary-button">
                   Menu
                 </motion.button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
-
       </div>
     </div>
   )

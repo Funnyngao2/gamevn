@@ -1,0 +1,319 @@
+.gameover-root {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.gameover-scene-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gameover-scene-bg-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, #050a12 0%, #0f172a 50%, #020617 100%);
+}
+
+.gameover-scene-orb {
+  position: absolute;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  filter: blur(40px);
+}
+
+.gameover-scene-star {
+  position: absolute;
+  border-radius: 999px;
+  background: #fff;
+  animation: gameover-star-pulse 2.2s infinite;
+}
+
+.gameover-ambient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gameover-particles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gameover-particle {
+  position: absolute;
+  border-radius: 999px;
+  opacity: 0.15;
+  filter: blur(2px);
+}
+
+.gameover-content {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 1024px;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gameover-reveal-wrap,
+.gameover-reveal-inner,
+.gameover-stats-wrap,
+.gameover-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gameover-stats-wrap {
+  width: 100%;
+}
+
+.gameover-icon-shell {
+  width: 112px;
+  height: 112px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid;
+  border-radius: 999px;
+}
+
+.gameover-status-title {
+  margin: 0;
+  font-size: clamp(52px, 7vw, 72px);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.gameover-status-subtitle {
+  margin: 12px 0 0;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+
+.gameover-header {
+  margin-bottom: 32px;
+}
+
+.gameover-logo {
+  height: 40px;
+  margin-bottom: 16px;
+  object-fit: contain;
+  opacity: 0.9;
+}
+
+.gameover-result-top {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.gameover-header-line {
+  width: 80px;
+  height: 2px;
+  margin-top: 8px;
+  border-radius: 999px;
+  opacity: 0.6;
+}
+
+.gameover-groups {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.gameover-group-card {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+}
+
+.gameover-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.gameover-group-badge {
+  font-size: 16px;
+}
+
+.gameover-group-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.gameover-group-list > * + * {
+  margin-top: 12px;
+}
+
+.gameover-empty-text {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.gameover-player-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 12px;
+}
+
+.gameover-player-avatar-wrap {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 2px solid;
+  border-radius: 10px;
+}
+
+.gameover-player-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gameover-player-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.gameover-player-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gameover-player-name {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gameover-you-badge {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.gameover-player-role {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gameover-actions {
+  width: 100%;
+  max-width: 448px;
+  display: flex;
+  gap: 16px;
+}
+
+.gameover-primary-button,
+.gameover-secondary-button {
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.gameover-primary-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.gameover-secondary-button {
+  padding: 16px 32px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+@keyframes gameover-star-pulse {
+  0% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.15); }
+  100% { opacity: 0.2; transform: scale(1); }
+}
+
+@media (max-width: 1024px) {
+  .gameover-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .gameover-content {
+    padding: 0 16px;
+  }
+
+  .gameover-actions {
+    flex-direction: column;
+  }
+
+  .gameover-secondary-button {
+    padding: 14px 24px;
+  }
+
+  .gameover-status-subtitle {
+    letter-spacing: 0.18em;
+    font-size: 12px;
+  }
+}

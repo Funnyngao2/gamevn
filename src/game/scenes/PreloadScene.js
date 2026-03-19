@@ -33,10 +33,6 @@ export class PreloadScene extends Phaser.Scene {
     alertImgs.forEach(k => img(k, `assets/Images/Alerts/${k}.png`))
     for (let i = 1; i <= 18; i++) img(`kill${i}`, `assets/Images/Alerts/kill${i}.png`)
 
-    const meetImgs = ['chat','chat_dead','checkbox','close','e_vote_base','e_vote_base_dead',
-      'proceed','select_vote','skip_vote','voted_players']
-    meetImgs.forEach(k => img(k, `assets/Images/Meeting/${k}.png`))
-
     const itemImgs = ['emergency_button','emergency_button_highlight','emergency_icon',
       'emergency_icon_bright','emergency_icon_inv','generator','generator_highlight',
       'health_pack','gas_can','gas_can_highlighted','fuel_engine','fuel_engine_highlighted',

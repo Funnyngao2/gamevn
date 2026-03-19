@@ -5,6 +5,7 @@ import { EffectCoverflow, Keyboard, Navigation } from 'swiper/modules'
 import 'swiper/css'
 import 'swiper/css/effect-coverflow'
 import { useAppStore } from '../store.js'
+import { SceneBg } from './lobbyShared.jsx'
 import './MenuView.css'
 
 // ── Character data ────────────────────────────────────────────────────────────
@@ -92,34 +93,6 @@ export default function MenuView() {
         ? <LoadingScreen key="load" pct={loadPct} tip={TIPS[tipIdx]} />
         : <CharacterSelect key="menu" />}
     </AnimatePresence>
-  )
-}
-
-function SceneBg() {
-  const orbs = [
-    { cx: '20%', cy: '25%', r: 350, c: '#0ea5e9' },
-    { cx: '75%', cy: '65%', r: 300, c: '#8b5cf6' },
-    { cx: '55%', cy: '5%',  r: 220, c: '#06b6d4' },
-    { cx: '8%',  cy: '75%', r: 200, c: '#6366f1' },
-  ]
-  const stars = useMemo(() => Array.from({ length: 100 }, (_, i) => ({
-    id: i, x: Math.random()*100, y: Math.random()*100,
-    s: Math.random()*1.5+0.5, dur: Math.random()*3000+1500,
-  })), [])
-  return (
-    <div className="scene-bg-wrapper">
-      <div className="scene-bg-gradient" />
-      {orbs.map((o, i) => (
-        <div key={i} className="bg-orb"
-          style={{ left:o.cx, top:o.cy, width:o.r*2, height:o.r*2,
-                   background:`radial-gradient(circle,${o.c}18 0%,transparent 70%)` }} />
-      ))}
-      {stars.map(s => (
-        <div key={s.id} className="bg-star"
-          style={{ left:`${s.x}%`, top:`${s.y}%`, width:s.s, height:s.s,
-                   animationDuration:`${s.dur}ms` }} />
-      ))}
-    </div>
   )
 }
 

@@ -1,18 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import './MinimapOverlay.css'
 
-// Map world size (từ Phaser tilemap)
-const MAP_W = 6720
-const MAP_H = 3840
+const MAP_W_DEFAULT = 6720
+const MAP_H_DEFAULT = 3840
 
-const COLOR_HEX = {
-  red:'#e74c3c', blue:'#3b82f6', green:'#22c55e', orange:'#f97316',
-  yellow:'#eab308', pink:'#ec4899', black:'#94a3b8', brown:'#b45309',
-  purple:'#a855f7', white:'#f1f5f9',
-}
-
-function worldToMap(wx, wy, w, h) {
-  return { x: (wx / MAP_W) * w, y: (wy / MAP_H) * h }
+function worldToMap(wx, wy, w, h, mapW, mapH) {
+  const W = mapW ?? MAP_W_DEFAULT
+  const H = mapH ?? MAP_H_DEFAULT
+  return { x: (wx / W) * w, y: (wy / H) * h }
 }
 
 export default function MinimapOverlay({ gameRef }) {
@@ -44,59 +40,71 @@ export default function MinimapOverlay({ gameRef }) {
 
   if (!mapData) return null
 
-  const { localPlayer, remotePlayers, tasks, isImposter } = mapData
+  const { localPlayer, tasks, isImposter, mapW, mapH } = mapData
+  const worldW = mapW ?? MAP_W_DEFAULT
+  const worldH = mapH ?? MAP_H_DEFAULT
 
-  // Kích thước minimap
+  // Kích thước minimap (tỉ lệ theo map thật)
   const miniW = 220, miniH = 130
   const fullW = Math.min(window.innerWidth * 0.55, 700)
-  const fullH = fullW * (MAP_H / MAP_W)
+  const fullH = fullW * (worldH / worldW)
 
   const W = expanded ? fullW : miniW
   const H = expanded ? fullH : miniH
 
   return (
-    <div style={{ position: 'fixed', bottom: 16, right: 16, zIndex: 30, userSelect: 'none' }}>
+    <div className="minimap-root">
       <motion.div
         animate={{ width: W, height: H }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        style={{
-          borderRadius: expanded ? 16 : 10,
-          overflow: 'hidden',
-          border: '1.5px solid rgba(255,255,255,0.15)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-          background: '#0a0f1a',
-          position: 'relative',
-          cursor: 'pointer',
-        }}
+        className="minimap-panel"
+        style={{ borderRadius: expanded ? 16 : 10 }}
         onClick={() => setExpanded(v => !v)}
       >
         {/* Map image */}
         <img
           src="assets/Maps/mini_map3.png"
           alt="map"
-          style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', opacity: 0.85 }}
+          className="minimap-image"
           draggable={false}
         />
 
         {/* SVG overlay — dots & tasks */}
         <svg
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}
+          className="minimap-svg"
           viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
         >
-          {/* Task dots (crewmate only) */}
+          {/* Task hotspots (crewmate only) — glow + pin shape */}
           {!isImposter && tasks?.map((t, i) => {
-            const p = worldToMap(t.x, t.y, W, H)
+            const p = worldToMap(t.x, t.y, W, H, worldW, worldH)
+            const size = expanded ? 6 : 5
+            const isDone = t.done
             return (
-              <g key={i}>
-                <rect
-                  x={p.x - 4} y={p.y - 4} width={8} height={8}
-                  fill={t.done ? '#22c55e' : '#facc15'}
-                  opacity={t.done ? 0.6 : 0.95}
-                  rx={1}
+              <g key={i} className={isDone ? 'minimap-task-done' : 'minimap-task-pending'}>
+                {/* Outer glow */}
+                <circle cx={p.x} cy={p.y} r={size + 4}
+                  fill={isDone ? '#22c55e' : '#facc15'}
+                  opacity={isDone ? 0.2 : 0.35}
                 />
-                {!t.done && expanded && (
-                  <text x={p.x} y={p.y - 7} textAnchor="middle"
-                    fontSize={9} fill="#facc15" fontFamily="Arial" opacity={0.8}>
+                <circle cx={p.x} cy={p.y} r={size + 2}
+                  fill={isDone ? '#22c55e' : '#facc15'}
+                  opacity={isDone ? 0.4 : 0.5}
+                />
+                {/* Pin body */}
+                <circle cx={p.x} cy={p.y} r={size}
+                  fill={isDone ? '#16a34a' : '#eab308'}
+                  stroke={isDone ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.6)'}
+                  strokeWidth={1}
+                />
+                {/* Inner dot */}
+                <circle cx={p.x} cy={p.y} r={size * 0.4}
+                  fill="rgba(255,255,255,0.9)"
+                />
+                {!isDone && expanded && (
+                  <text x={p.x} y={p.y - size - 5} textAnchor="middle"
+                    fontSize={9} fill="#fef08a" fontFamily="Arial" fontWeight="600"
+                    stroke="rgba(0,0,0,0.6)" strokeWidth={2} paintOrder="stroke">
                     {t.label}
                   </text>
                 )}
@@ -104,28 +112,10 @@ export default function MinimapOverlay({ gameRef }) {
             )
           })}
 
-          {/* Remote players */}
-          {remotePlayers?.map((rp, i) => {
-            const p = worldToMap(rp.x, rp.y, W, H)
-            const hex = COLOR_HEX[rp.color] || '#fff'
-            const r = expanded ? 5 : 3.5
-            return (
-              <g key={rp.id || i}>
-                <circle cx={p.x} cy={p.y} r={r + 2} fill={hex} opacity={0.2} />
-                <circle cx={p.x} cy={p.y} r={r} fill={rp.alive ? hex : '#4466ff'} opacity={rp.alive ? 0.9 : 0.5} />
-                {expanded && (
-                  <text x={p.x} y={p.y - r - 3} textAnchor="middle"
-                    fontSize={9} fill={hex} fontFamily="Arial" fontWeight="bold">
-                    {rp.name}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-
+          {/* Chỉ hiển thị bản thân — không vẽ người chơi khác */}
           {/* Local player — luôn trắng với ring */}
           {localPlayer && (() => {
-            const p = worldToMap(localPlayer.x, localPlayer.y, W, H)
+            const p = worldToMap(localPlayer.x, localPlayer.y, W, H, worldW, worldH)
             const r = expanded ? 6 : 4
             return (
               <g>
@@ -144,20 +134,12 @@ export default function MinimapOverlay({ gameRef }) {
         </svg>
 
         {/* Label */}
-        <div style={{
-          position: 'absolute', top: 5, left: 8,
-          color: 'rgba(255,255,255,0.5)', fontSize: 9,
-          fontFamily: 'Arial', fontWeight: 700, letterSpacing: '0.1em',
-          textTransform: 'uppercase', pointerEvents: 'none',
-        }}>
+        <div className="minimap-label">
           {expanded ? 'BẢN ĐỒ  [M]' : '[M]'}
         </div>
 
         {/* Expand icon */}
-        <div style={{
-          position: 'absolute', top: 4, right: 6,
-          color: 'rgba(255,255,255,0.35)', fontSize: 11, pointerEvents: 'none',
-        }}>
+        <div className="minimap-expand-icon">
           {expanded ? '✕' : '⛶'}
         </div>
       </motion.div>

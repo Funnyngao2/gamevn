@@ -52,6 +52,36 @@ export class GameScene extends Phaser.Scene {
       })
     }
 
+    // --- TASKS FROM MAP: ưu tiên layer "Tasks", không có thì lấy từ "Obstacles" (object không phải wall/vent/spawn) ---
+    this.tasksFromMap = []
+    const isObstacleOrSpawn = (name) => {
+      if (!name) return true
+      if (['walls', 'wall', 'tables', 'vent', 'emerg_btn', 'emergency_btn'].includes(String(name).toLowerCase())) return true
+      if (/^player\d*$/i.test(String(name))) return true
+      return false
+    }
+    let taskObjects = []
+    const tasksOnlyLayer = this.map.getObjectLayer('Tasks') || this.map.getObjectLayer('tasks')
+    if (tasksOnlyLayer && tasksOnlyLayer.objects && tasksOnlyLayer.objects.length) {
+      taskObjects = tasksOnlyLayer.objects
+    } else if (obstaclesLayer && obstaclesLayer.objects) {
+      taskObjects = obstaclesLayer.objects.filter(obj => obj.x != null && obj.y != null && !isObstacleOrSpawn(obj.name))
+    }
+    taskObjects.forEach((obj, i) => {
+      const props = (obj.properties || []).reduce((acc, p) => { acc[p.name] = p.value; return acc }, {})
+      const id = props.id || obj.name || `task_${obj.id ?? i}`
+      let kind = props.kind
+      if (!kind && obj.name && obj.name.includes('_')) kind = obj.name.split('_').slice(0, -1).join('_')
+      if (!kind) kind = 'task'
+      const label = props.label || obj.name || id
+      const x = Math.round((obj.x || 0) + (obj.width || 0) / 2)
+      const y = Math.round((obj.y || 0) + (obj.height || 0) / 2)
+      this.tasksFromMap.push({ id: String(id), kind: String(kind), label: String(label), x, y })
+    })
+    if (this.tasksFromMap.length) {
+      console.log('[Tasks] Danh sách nhiệm vụ từ map (vị trí x,y):', this.tasksFromMap.map(t => ({ id: t.id, kind: t.kind, label: t.label, x: t.x, y: t.y })))
+    }
+
     // --- PLAYER ---
     const spawn = this._getSpawn()
     this.player = new Player(this, spawn.x, spawn.y, this.playerColor, true)
@@ -65,7 +95,16 @@ export class GameScene extends Phaser.Scene {
 
     // --- CAMERA ---
     this.cameras.main.setBounds(0, 0, mapW, mapH)
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1)
+    this.cameras.main.startFollow(this.player, true, 0.08, 0.08) // Làm mượt hơn (lerp 0.08)
+    
+    // THIẾT LẬP ZOOM CHUẨN: 
+    // Giúp tầm nhìn của mọi người chơi là tương đương nhau (khoảng 1.1x đến 1.3x)
+    // Bạn có thể chỉnh con số 1.25 này tùy theo độ rộng bạn muốn
+    this.cameras.main.setZoom(1.25) 
+    
+    // Đảm bảo camera không bao giờ trượt ra ngoài bản đồ khi nhân vật ở sát mép
+    this.cameras.main.setRoundPixels(true) 
+    this.cameras.main.setDeadzone(0, 0) // Camera bám sát ngay lập tức khi di chuyển
 
     // --- INPUT ---
     this.cursors = this.input.keyboard.createCursorKeys()
@@ -102,6 +141,8 @@ export class GameScene extends Phaser.Scene {
     this.ventCooldownStart = 0
     this.meetingCooldownStart = this.time.now
     this.remotePlayers = {}
+    this.corpses = this.add.group() // Group chứa các sprite xác chết
+    this.spawnedCorpseIds = new Set() // Lưu ID đã để lại xác để tránh tạo trùng
     this.playerId = 'local'
     this.startTime = Date.now() // Dùng Date.now() để đồng bộ tuyệt đối
     this._gameFullyStarted = false // Cờ chặn kiểm tra thắng thua
@@ -109,6 +150,15 @@ export class GameScene extends Phaser.Scene {
 this.time.delayedCall(3000, () => {
   this._gameFullyStarted = true
   console.log("🚀 Game logic fully active")
+  // In ra vị trí nhiệm vụ từ map (và nhiệm vụ được gán) để dễ kiểm tra
+  if (this.tasksFromMap && this.tasksFromMap.length) {
+    console.log('[Tasks] Vị trí nhiệm vụ từ map (x, y):', this.tasksFromMap.map(t => ({ id: t.id, kind: t.kind, x: t.x, y: t.y })))
+  } else {
+    console.log('[Tasks] Không có nhiệm vụ từ map (kiểm tra layer "Tasks" trong Tiled)')
+  }
+  if (this.taskList && this.taskList.length) {
+    console.log('[Tasks] Nhiệm vụ được gán cho bạn:', this.taskList.map(t => ({ id: t.id, label: t.label, x: t.x, y: t.y })))
+  }
 })
 
 // --- HUD ---
@@ -118,6 +168,34 @@ this._createHUD()
     this.game.registry.set('chatBridge', this._chatBridge)
     // sendChat function exposed to React
     this.game.registry.set('sendChat', (text, channel) => this._sendChat(text, channel))
+    this.game.registry.set('handleMeetingClosed', (ejectedId) => {
+      if (this.sabotageReactor && this._meetingStartTime != null) {
+        this.reactorStartTime += (this.time.now - this._meetingStartTime)
+      }
+      this._meetingStartTime = null
+      this.game.registry.set('meetingActive', false)
+      this.paused = false
+      if (this.bgMusic && this.bgMusic.scene && !this.bgMusic.isPlaying) {
+        try { this.bgMusic.play() } catch (e) { console.warn("Âm thanh bị lỗi khi mở lại nhạc nền:", e) }
+      }
+      if (ejectedId) this._handleEject(ejectedId)
+    })
+    this.game.registry.set('handleMeetingAbort', () => {
+      if (this.sabotageReactor && this._meetingStartTime != null) {
+        this.reactorStartTime += (this.time.now - this._meetingStartTime)
+      }
+      this._meetingStartTime = null
+      this.game.registry.set('meetingActive', false)
+      this.paused = false
+      if (this.bgMusic && this.bgMusic.scene && !this.bgMusic.isPlaying) {
+        try { this.bgMusic.play() } catch (e) { console.warn("Âm thanh bị lỗi khi hủy họp:", e) }
+      }
+    })
+    this.game.registry.set('onSabotageSelect', (type) => {
+      this._closeSabotageMenu()
+      this._activateSabotage(type)
+    })
+    this.game.registry.set('onSabotageMenuClose', () => this._closeSabotageMenu())
 
     // --- MUSIC ---
     if (this.cache.audio.has('bg_music')) {
@@ -141,6 +219,11 @@ this._createHUD()
   }
 
   _getSpawn() {
+    // Ưu tiên vị trí do server gán (random trong player1..player12, mỗi người một chỗ)
+    const serverSpawn = this.game.registry.get('spawn')
+    if (serverSpawn && typeof serverSpawn.x === 'number' && typeof serverSpawn.y === 'number') {
+      return { x: serverSpawn.x, y: serverSpawn.y }
+    }
     const obstaclesLayer = this.map.getObjectLayer('Obstacles')
     const spawns = []
     if (obstaclesLayer) {
@@ -154,52 +237,25 @@ this._createHUD()
   }
 
   _createHUD() {
+    // Chuỗi hiển thị (Q giết, Phá hoại, gợi ý phím) do React build từ hudData
     const isImp = this.player.isImposter
-
-    // Task bar (crewmate only - impostor sees fake bar)
-    this.add.rectangle(10, 10, 200, 16, 0x333333).setOrigin(0).setScrollFactor(0).setDepth(10)
-    this.taskBar = this.add.rectangle(10, 10, 0, 16, 0x4caf50).setOrigin(0).setScrollFactor(0).setDepth(11)
-    this.taskText = this.add.text(218, 10, '', {
-      fontSize: '13px', color: '#fff', stroke: '#000', strokeThickness: 2
-    }).setScrollFactor(0).setDepth(11)
-
-    // Role badge
-    this.roleText = this.add.text(10, 34, isImp ? '☠ IMPOSTOR' : '✓ CREWMATE', {
-      fontSize: '16px', color: isImp ? '#ff4444' : '#44ff88',
-      stroke: '#000', strokeThickness: 3
-    }).setScrollFactor(0).setDepth(11)
-
-    // Kill cooldown (impostor only)
-    this.killCooldownText = this.add.text(10, 56, '', {
-      fontSize: '14px', color: '#ff8888', stroke: '#000', strokeThickness: 2
-    }).setScrollFactor(0).setDepth(11)
-    if (!isImp) this.killCooldownText.setVisible(false)
-
-    this.sabotageText = this.add.text(10, 74, '', {
-      fontSize: '14px', color: '#ffaa00', stroke: '#000', strokeThickness: 2
-    }).setScrollFactor(0).setDepth(11)
-
-    // Controls hint - role-specific
-    const hint = isImp
-      ? 'WASD: Di chuyển | Q: Giết | X: Phá hoại | V: Cống | R: Báo xác'
-      : 'WASD: Di chuyển | F: Làm nhiệm vụ | E: Họp khẩn | R: Báo xác'
-    this.add.text(1270, 630, hint, {
-      fontSize: '11px', color: '#aaa'
-    }).setOrigin(1, 1).setScrollFactor(0).setDepth(11)
-
-    // Crewmate task list panel
     if (!isImp) this._createTaskList()
 
     // Draw task zone markers on map (crewmate only)
     if (!isImp) this._drawTaskMarkers()
 
-    // Minimap handled by React overlay (MinimapOverlay.jsx)
+    // HUD/minimap/meeting handled by React overlays
+    this._updateHUD()
   }
 
   _updateMinimap() {
-    // Bridge minimap data to React overlay
-    if (!this.game?.registry) return
+    // Bridge minimap data to React overlay (dùng kích thước map thật để tránh lệch vị trí)
+    if (!this.game?.registry || !this.map) return
+    const mapW = this.map.widthInPixels
+    const mapH = this.map.heightInPixels
     this.game.registry.set('minimapData', {
+      mapW,
+      mapH,
       localPlayer: { x: this.player.x, y: this.player.y, color: this.playerColor, alive: this.player.alive },
       remotePlayers: Object.values(this.remotePlayers).map(rp => ({
         id: rp.playerId, x: rp.x, y: rp.y, color: rp.color,
@@ -229,27 +285,11 @@ this._createHUD()
   }
 
   _createTaskList() {
-    // Tasks with map positions (from gamefunctions.py coordinates)
-    const tasks = [
-      { id: 'fix_wiring',    label: 'Sửa dây điện',       done: false, x: 3166, y: 1846 },
-      { id: 'fuel_engine',   label: 'Đổ nhiên liệu',      done: false, x: 1226, y: 2300 },
-      { id: 'reboot_wifi',   label: 'Khởi động lại Wifi', done: false, x: 3700, y: 1554 },
-      { id: 'empty_garbage', label: 'Đổ rác',             done: false, x: 3940, y: 321  },
-      { id: 'stabilize_nav', label: 'Ổn định điều hướng', done: false, x: 5610, y: 1290 },
-    ]
-    this.taskList = tasks
-
-    const panelX = 1270 - 180, panelY = 50
-    this.add.rectangle(panelX - 8, panelY - 8, 196, tasks.length * 22 + 32, 0x000000, 0.6)
-      .setOrigin(0).setScrollFactor(0).setDepth(10)
-    this.add.text(panelX, panelY, 'NHIỆM VỤ', {
-      fontSize: '12px', color: '#aaaaaa', fontFamily: 'Arial', fontStyle: 'bold'
-    }).setScrollFactor(0).setDepth(11)
-
-    this.taskLabels = tasks.map((t, i) => {
-      return this.add.text(panelX, panelY + 18 + i * 22, `○ ${t.label}`, {
-        fontSize: '13px', color: '#cccccc', fontFamily: 'Arial'
-      }).setScrollFactor(0).setDepth(11)
+    const assigned = this.game.registry.get('assignedTasks') || []
+    const fromMap = (this.tasksFromMap && this.tasksFromMap.length) ? this.tasksFromMap : null
+    this.taskList = assigned.map(task => {
+      const base = fromMap ? (fromMap.find(t => t.id === task.id) || task) : task
+      return { id: task.id, kind: base.kind, label: base.label, x: base.x, y: base.y, done: false }
     })
   }
 
@@ -259,8 +299,6 @@ this._createHUD()
     if (!task) return
     task.done = true
     this.missionsDone++
-    const idx = this.taskList.indexOf(task)
-    this.taskLabels[idx].setText(`✓ ${task.label}`).setColor('#44ff88')
     safePlay(this, 'task_complete')
     if (this.ws) this.ws.emit('taskDone', { taskId })
     this._refreshTaskMarkers()
@@ -268,28 +306,47 @@ this._createHUD()
   }
 
   _updateHUD() {
-    const total = this.taskList ? this.taskList.length : NO_OF_MISSIONS
-    this.taskBar.setSize((this.missionsDone / total) * 200, 16)
-    this.taskText.setText(`${this.missionsDone}/${total}`)
+    // Thanh tiến độ ở trên đầu là Shared Progress (Tiến độ chung của toàn phòng)
+    let done = this.missionsDone
+    let total = this.taskList ? this.taskList.length : NO_OF_MISSIONS
 
-    if (this.player.isImposter) {
+    // Nếu đã nhận được dữ liệu tổng từ server, ưu tiên hiển thị dữ liệu đó
+    if (typeof this._totalMissionsNeeded === 'number' && this._totalMissionsNeeded > 0) {
+      done = this._totalMissionsDone || 0
+      total = this._totalMissionsNeeded
+    }
+
+    const isImp = this.player.isImposter
+    let killCooldownSeconds = undefined
+    let sabotageReactorSeconds = null
+    let sabotageLights = false
+    let sabotageCooldownSeconds = undefined
+
+    if (isImp) {
       const killElapsed = this.killCooldownStart === 0 ? 0 : this.time.now - this.killCooldownStart
-      const killLeft = Math.max(0, Math.ceil((KILL_COOLDOWN - killElapsed) / 1000))
-      this.killCooldownText.setText(killLeft > 0 ? `Giết: ${killLeft}s` : 'Giết: SẴN SÀNG [Q]')
+      killCooldownSeconds = Math.max(0, Math.ceil((KILL_COOLDOWN - killElapsed) / 1000))
     }
 
     if (this.sabotageReactor) {
-      const left = Math.max(0, Math.ceil((REACTOR_CRITICAL_TIME - (this.time.now - this.reactorStartTime)) / 1000))
-      this.sabotageText.setText(`⚠ LÒ PHẢN ỨNG: ${left}s`).setColor('#ff0000')
+      sabotageReactorSeconds = Math.max(0, Math.ceil((REACTOR_CRITICAL_TIME - (this.time.now - this.reactorStartTime)) / 1000))
     } else if (this.sabotageLights) {
-      this.sabotageText.setText('⚠ ĐÈN BỊ TẮT').setColor('#ffaa00')
-    } else if (this.player.isImposter) {
-      const sabLeft = Math.max(0, Math.ceil((SABOTAGE_COOLDOWN - (this.time.now - this.sabotageCooldownStart)) / 1000))
-      this.sabotageText.setText(sabLeft > 0 ? `Phá hoại: ${sabLeft}s` : 'Phá hoại: SẴN SÀNG [X]').setColor('#ffaa00')
-    } else {
-      this.sabotageText.setText('')
+      sabotageLights = true
+    } else if (isImp) {
+      const sabElapsed = this.time.now - this.sabotageCooldownStart
+      sabotageCooldownSeconds = Math.max(0, Math.ceil((SABOTAGE_COOLDOWN - sabElapsed) / 1000))
     }
 
+    this.game.registry.set('hudData', {
+      missionsDone: done,
+      total,
+      isImposter: this.player.isImposter,
+      alive: this.player.alive,
+      killCooldownSeconds,
+      sabotageReactorSeconds,
+      sabotageLights,
+      sabotageCooldownSeconds,
+      tasks: this.taskList || [],
+    })
     this._updateMinimap()
   }
 
@@ -352,10 +409,10 @@ this._createHUD()
     }
 
     if (!prompt) {
-      const targets = Object.values(this.remotePlayers)
-      const corpse = targets.find(p => !p.alive &&
-        Phaser.Math.Distance.Between(px, py, p.x, p.y) < INTERACT_RANGE)
-      if (corpse) prompt = '[R] Báo xác'
+      // Ưu tiên báo xác chết dựa trên sprite cái xác tĩnh dưới đất
+      const nearBody = this.corpses.getChildren().find(body => 
+        Phaser.Math.Distance.Between(px, py, body.x, body.y) < INTERACT_RANGE)
+      if (nearBody) prompt = '[R] Báo xác'
     }
 
     if (!prompt && !this.player.isImposter) {
@@ -396,12 +453,7 @@ this._createHUD()
   }
 
   _showVentMenu(currentVent) {
-    // Prompt shown in _updateInteractionPrompt while inVent
-    // Movement handled in update() via ventKey / emergencyKey
-    this.promptText
-      .setText(`[V] Di chuyển sang cống tiếp | [E] Thoát cống`)
-      .setPosition(this.player.x - 120, this.player.y - 70)
-      .setVisible(true)
+    // Vent prompt is handled by React gamePrompt via _updateInteractionPrompt
   }
 
   _exitVent() {
@@ -411,7 +463,6 @@ this._createHUD()
     this.player.body.enable = true
     this.ventCooldownStart = this.time.now
     safePlay(this, 'vent')
-    this.promptText.setVisible(false)
   }
 
   // --- SABOTAGE SYSTEM ---
@@ -423,50 +474,15 @@ this._createHUD()
   }
 
   _showSabotageMenu() {
-    if (this._sabotageMenu) return
-    const { width, height } = this.scale
-    const menuW = 280, menuH = 160
-    const mx = width / 2 - menuW / 2, my = height / 2 - menuH / 2
-
-    const bg = this.add.rectangle(mx, my, menuW, menuH, 0x1a0000, 0.95)
-      .setOrigin(0).setScrollFactor(0).setDepth(40)
-    const title = this.add.text(width / 2, my + 18, '☠ CHỌN PHÁ HOẠI', {
-      fontSize: '16px', color: '#ff4444', fontStyle: 'bold', fontFamily: 'Arial'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(41)
-
-    // Reactor button
-    const btn1bg = this.add.rectangle(mx + 20, my + 45, menuW - 40, 36, 0x440000)
-      .setOrigin(0).setScrollFactor(0).setDepth(41)
-      .setInteractive({ useHandCursor: true })
-    const btn1txt = this.add.text(width / 2, my + 63, '🔴 Phá lò phản ứng (20s)', {
-      fontSize: '14px', color: '#ffaaaa', fontFamily: 'Arial'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(42)
-    btn1bg.on('pointerover', () => btn1bg.setFillStyle(0x880000))
-    btn1bg.on('pointerout',  () => btn1bg.setFillStyle(0x440000))
-    btn1bg.on('pointerdown', () => { this._closeSabotageMenu(); this._activateSabotage('reactor') })
-
-    // Lights button
-    const btn2bg = this.add.rectangle(mx + 20, my + 90, menuW - 40, 36, 0x442200)
-      .setOrigin(0).setScrollFactor(0).setDepth(41)
-      .setInteractive({ useHandCursor: true })
-    const btn2txt = this.add.text(width / 2, my + 108, '💡 Tắt đèn', {
-      fontSize: '14px', color: '#ffddaa', fontFamily: 'Arial'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(42)
-    btn2bg.on('pointerover', () => btn2bg.setFillStyle(0x884400))
-    btn2bg.on('pointerout',  () => btn2bg.setFillStyle(0x442200))
-    btn2bg.on('pointerdown', () => { this._closeSabotageMenu(); this._activateSabotage('lights') })
-
-    const closeHint = this.add.text(width / 2, my + menuH - 10, '[X hoặc ESC] Đóng', {
-      fontSize: '11px', color: '#888888', fontFamily: 'Arial'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(42)
-
-    this._sabotageMenu = { bg, title, btn1bg, btn1txt, btn2bg, btn2txt, closeHint }
+    if (this._sabotageMenuOpen) return
+    this._sabotageMenuOpen = true
+    this.game.registry.set('sabotageMenuOpen', true)
   }
 
   _closeSabotageMenu() {
-    if (!this._sabotageMenu) return
-    Object.values(this._sabotageMenu).forEach(o => o.destroy())
-    this._sabotageMenu = null
+    if (!this._sabotageMenuOpen) return
+    this._sabotageMenuOpen = false
+    this.game.registry.set('sabotageMenuOpen', false)
   }
 
   _activateSabotage(type) {
@@ -535,7 +551,6 @@ this._createHUD()
     if (type === 'reactor') {
       this.sabotageReactor = false
       this._showSabotageAlert('✓ Lò phản ứng đã được sửa!', '#44ff88')
-      if (this.ws) this.ws.emit('sabotageFixed', { type: 'reactor' })
     } else if (type === 'lights') {
       this.sabotageLights = false
       this._applyLightsEffect(false)
@@ -571,17 +586,16 @@ this._createHUD()
         this._showSabotageAlert('✓ Điểm B đã sửa! Sửa điểm A!', '#ffff44')
         if (this.ws) this.ws.emit('sabotageFixProgress', { type: 'reactor', point: 'B' })
       }
-      // Both fixed?
-      if (this._reactorFixed.A && this._reactorFixed.B) {
-        this._fixSabotage('reactor')
-      }
       // Return true if player was near a fix point
       return dA < INTERACT_RANGE || dB < INTERACT_RANGE
     }
 
     if (this.sabotageLights) {
       const d = Phaser.Math.Distance.Between(px, py, this._lightsFixPoint.x, this._lightsFixPoint.y)
-      if (d < INTERACT_RANGE) { this._fixSabotage('lights'); return true }
+      if (d < INTERACT_RANGE) {
+        if (this.ws) this.ws.emit('sabotageFixed', { type: 'lights' })
+        return true
+      }
     }
 
     return false
@@ -602,59 +616,48 @@ this._createHUD()
     })
 
     if (nearest) {
-      nearest.die()
-      nearest.becomeGhost()
       this.killCooldownStart = this.time.now
       safePlay(this, 'imposter_kill')
       if (this.ws) this.ws.emit('kill', { victimId: nearest.playerId })
-      this._checkImpostorWin()
     }
   }
 
   _checkImpostorWin() {
-    if (!this._gameFullyStarted) return
-    if (this._gameoverEmitted) return
-
-    const remote = Object.values(this.remotePlayers)
-    const aliveCrewRemote = remote.filter(p => p.alive && !p.isImposter).length
-    const aliveImpRemote  = remote.filter(p => p.alive && p.isImposter).length
-    const selfCrew = !this.player.isImposter && this.player.alive ? 1 : 0
-    const selfImp  =  this.player.isImposter && this.player.alive ? 1 : 0
-    const totalCrew = aliveCrewRemote + selfCrew
-    const totalImp  = aliveImpRemote  + selfImp
-
-    if (totalCrew === 0 && totalImp > 0) {
-      this._gameoverEmitted = true
-      if (this.ws) this.ws.emit('gameover', { winner: 'impostor' })
-    }
+    // Win conditions are server-authoritative.
   }
 
   _checkWinConditions() {
-    if (!this.playing) return
-    if (!this._gameFullyStarted) return
-    if (this._gameoverEmitted) return  // chỉ emit 1 lần
+    // Win conditions are server-authoritative.
+  }
 
-    const total = this.taskList ? this.taskList.length : NO_OF_MISSIONS
-    if (this.missionsDone >= total) {
-      this._gameoverEmitted = true
-      if (this.ws) this.ws.emit('gameover', { winner: 'crew' })
-      return
-    }
-    if (this.sabotageReactor && this.time.now - this.reactorStartTime > REACTOR_CRITICAL_TIME) {
-      this._gameoverEmitted = true
-      if (this.ws) this.ws.emit('gameover', { winner: 'impostor' })
-    }
+  _spawnCorpse(x, y, color, id) {
+    if (this.spawnedCorpseIds.has(id)) return
+    // Sử dụng sprite xác chết (có xương)
+    const body = this.add.sprite(x, y, `${color}_dead`).setDepth(1)
+    body.playerId = id
+    this.corpses.add(body)
+    this.spawnedCorpseIds.add(id)
+    console.log(`💀 Đã tạo xác của ${id} tại ${x}, ${y}`)
   }
 
   _tryReport() {
     if (!this.player.alive || this.player.inVent) return
-    const targets = Object.values(this.remotePlayers)
-    const corpse = targets.find(p => !p.alive &&
-      Phaser.Math.Distance.Between(this.player.x, this.player.y, p.x, p.y) < INTERACT_RANGE)
-    if (corpse) {
-      safePlay(this, 'report_Bodyfound')
-      this._startMeeting(this.playerId, corpse.playerId)
-      if (this.ws) this.ws.emit('report', { victimId: corpse.playerId })
+    
+    // CHỈ tìm trong group corpses (các cái xác tĩnh dưới đất)
+    let nearestCorpse = null
+    let minDist = 100 // Tăng nhẹ từ INTERACT_RANGE (80) lên 100 để báo xác nhạy hơn
+    
+    this.corpses.getChildren().forEach(body => {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, body.x, body.y)
+      if (d < minDist) {
+        minDist = d
+        nearestCorpse = body
+      }
+    })
+
+    if (nearestCorpse) {
+      console.log(`📣 Đang báo xác của: ${nearestCorpse.playerId}`)
+      if (this.ws) this.ws.emit('report', { victimId: nearestCorpse.playerId })
     }
   }
 
@@ -664,57 +667,52 @@ this._createHUD()
     if (this.time.now - this.meetingCooldownStart < MEETING_COOLDOWN) return
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.emergencyBtnPos.x, this.emergencyBtnPos.y)
     if (dist < INTERACT_RANGE) {
-      safePlay(this, 'alarm_emergencymeeting')
-      this._startMeeting(this.playerId, null)
-      this.meetingCooldownStart = this.time.now
       if (this.ws) this.ws.emit('emergency')
     }
   }
 
   _startMeeting(reporterId, victimId) {
+    safePlay(this, victimId ? 'report_Bodyfound' : 'alarm_emergencymeeting')
     this.bgMusic?.stop()
-    this.scene.pause('Game')
-    this.scene.launch('Meeting', {
+    this.paused = true
+    this.meetingCooldownStart = this.time.now
+    this._meetingStartTime = this.time.now
+    this.game.registry.set('meetingActive', true)
+    this.game.registry.get('onPrompt')?.(null)
+
+    // Xóa tất cả xác chết trên bản đồ khi cuộc họp bắt đầu
+    if (this.corpses) this.corpses.clear(true, true)
+
+    // Gọi ngay để client có meeting state trước khi nhận meetingState (timer đếm đúng)
+    this.game.registry.get('onMeetingStart')?.({
       players: this._getAllPlayers(),
       localPlayerId: this.playerId,
       reporterId, victimId,
       gameMode: this.gameMode
     })
-    this.scene.get('Meeting').events.once('meetingEnd', (ejectedId) => {
-      this.scene.resume('Game')
-      this.bgMusic?.play()
-      if (ejectedId) this._handleEject(ejectedId)
-    })
   }
 
   _handleEject(playerId) {
     if (playerId === this.playerId) {
+      this._spawnCorpse(this.player.x, this.player.y, this.playerColor, this.playerId)
       this._becomeGhost()
     } else if (this.remotePlayers[playerId]) {
-      this.remotePlayers[playerId].becomeGhost()
+      const rp = this.remotePlayers[playerId]
+      this._spawnCorpse(rp.x, rp.y, rp.color, playerId)
+      rp.die()
+      rp.becomeGhost()
     }
-    // Check if all impostors ejected → crew wins
-    this._checkAllImpostorsGone()
   }
 
   _checkAllImpostorsGone() {
-    if (!this._gameFullyStarted) return
-    if (this._gameoverEmitted) return
-
-    const remote = Object.values(this.remotePlayers)
-    const aliveImpRemote = remote.filter(p => p.alive && p.isImposter).length
-    const selfImp = this.player.isImposter && this.player.alive ? 1 : 0
-    if (aliveImpRemote + selfImp === 0) {
-      this._gameoverEmitted = true
-      if (this.ws) this.ws.emit('gameover', { winner: 'crew' })
-    }
+    // Win conditions are server-authoritative.
   }
 
   _getAllPlayers() {
     const all = [{ id: this.playerId, name: this.playerName, color: this.playerColor,
       alive: this.player.alive, isImposter: this.player.isImposter, isLocal: true }]
     Object.entries(this.remotePlayers).forEach(([id, p]) => {
-      all.push({ id: Number(id), name: p.playerName, color: p.color,
+      all.push({ id, name: p.playerName, color: p.color,
         alive: p.alive, isImposter: p.isImposter, isLocal: false })
     })
     return all
@@ -729,7 +727,7 @@ this._createHUD()
     if (!task) return
     
     // Gọi React để mở Mini-game
-    this.game.registry.get('onOpenTask')?.(task.id, task.label)
+    this.game.registry.get('onOpenTask')?.(task.id, task.label, task.kind)
     
     // Lắng nghe sự kiện hoàn thành từ React (chỉ đăng ký 1 lần)
     if (!this._taskListenerRegistered) {
@@ -747,7 +745,6 @@ this._createHUD()
     this.player.setAlpha(0.45)
     this.player.setTint(0x8888ff)
     this.player.body.enable = false  // pass through walls
-    if (this.roleText) this.roleText.setText('👻 HỒN MA').setColor('#aaaaff')
     // Ghost crewmate can still do tasks - show task markers
     if (!this.player.isImposter && this._taskMarkers) {
       this._taskMarkers.forEach(({ task, marker }) => marker.setVisible(!task.done))
@@ -755,13 +752,8 @@ this._createHUD()
     // Update chat bridge state
     if (this._chatBridge) this._chatBridge.alive = false
     this.game.registry.set('chatBridge', { ...this._chatBridge, alive: false })
-    // Show ghost notice with leave option
-    this._ghostNotice = this.add.text(640, 300,
-      '👻 Bạn đã chết\nChỉ hồn ma mới thấy bạn\n[T] Chat hồn ma  |  [L] Rời trận', {
-      fontSize: '20px', color: '#aaaaff', stroke: '#000', strokeThickness: 4,
-      align: 'center', backgroundColor: '#00000099', padding: { x: 16, y: 12 }
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(30)
-    this.time.delayedCall(4000, () => this._ghostNotice?.destroy())
+    this.game.registry.get('onAlert')?.('👻 Bạn đã chết\n[T] Chat hồn ma  |  [L] Rời trận', 'info', 4000)
+    this._updateHUD()
     // L key to leave game
     this.leaveKey = this.input.keyboard.addKey('L')
   }
@@ -777,6 +769,16 @@ this._createHUD()
     this.game.registry.get('onChatMessage')?.(msg)
   }
 
+  _cleanupSocketListeners() {
+    if (!this.ws) return
+    const events = [
+      'id', 'players', 'kill', 'meeting', 'reportFailed', 'meetingState', 'meetingResult',
+      'gameover', 'returnToLobby', 'chat', 'vote', 'meetingChat',
+      'sabotage', 'sabotageFixed', 'sabotageFixProgress'
+    ]
+    events.forEach(evt => this.ws.off(evt))
+  }
+
   _endGame(winner) {
     if (!this.playing) return
     this.playing = false
@@ -790,17 +792,21 @@ this._createHUD()
       this._nativeStateInterval = null
     }
     this.bgMusic?.stop()
-    if (this.scene.isActive('Meeting')) this.scene.stop('Meeting')
+    this.game.registry.get('handleMeetingAbort')?.()
+    this.game.registry.remove?.('hudData')
     safePlay(this, winner === 'crew' ? 'victory_crew' : 'victory_impostor')
-    if (this.ws) {
-      this.ws.off('id'); this.ws.off('players'); this.ws.off('kill')
-      this.ws.off('meeting'); this.ws.off('gameover'); this.ws.off('chat')
-      this.ws.off('vote'); this.ws.off('meetingChat')
-    }
+    
+    this._cleanupSocketListeners()
+
     this.time.delayedCall(1500, () => {
       // Notify React app if callback provided (new React architecture)
       if (this._onGameEnd) {
-        this._onGameEnd(winner)
+        this._onGameEnd({
+          winner,
+          roomId: this.roomId,
+          players: this._getAllPlayers(),
+          localPlayerId: this.playerId,
+        })
         return
       }
       // Fallback: old Phaser scene transition
@@ -845,19 +851,39 @@ this._createHUD()
   }
 
   _setupSocketListeners() {
+    this._totalMissionsDone = 0
+    this._totalMissionsNeeded = 0
+
+    this.ws.on('gameStart', (d) => {
+      this._totalMissionsDone = d.totalMissionsDone || 0
+      this._totalMissionsNeeded = d.totalMissionsNeeded || 0
+      this._updateHUD()
+    })
+
     this.ws.on('id',            (d) => { this.playerId = d.id })
     this.ws.on('players',       (d) => this._handlePlayers(d.players))
     this.ws.on('kill',          (d) => this._handleKillMsg(d))
     this.ws.on('meeting',       (d) => this._startMeeting(d.reporterId, d.victimId))
+    this.ws.on('reportFailed',  (d) => {
+      console.warn('📛 Báo xác thất bại:', d.reason, d.dist != null ? `(khoảng cách: ${d.dist})` : '')
+      this.game.registry.get('onAlert')?.(`Không thể báo xác: ${d.reason}`, 'info', 3000)
+    })
+    this.ws.on('meetingState',  (d) => this.game.registry.get('onMeetingState')?.(d))
+    this.ws.on('meetingResult', (d) => this.game.registry.get('onMeetingResult')?.(d))
     this.ws.on('gameover',      (d) => this._endGame(d.winner))
     this.ws.on('returnToLobby', (d) => this._handleReturnToLobby(d))
     this.ws.on('chat',          (d) => this._receiveChatMessage(d))
-    this.ws.on('vote',          (d) => { const ms = this.scene.get('Meeting'); if (ms?.scene.isActive()) ms.receiveVote(d.voterId, d.targetId) })
-    this.ws.on('meetingChat',   (d) => { const ms = this.scene.get('Meeting'); if (ms?.scene.isActive()) ms.receiveMeetingChat(d.senderId, d.text) })
+    this.ws.on('vote',          (d) => this.game.registry.get('onMeetingVote')?.(d))
+    this.ws.on('meetingChat',   (d) => this.game.registry.get('onMeetingChat')?.(d))
     this.ws.on('sabotage',      (d) => this._receiveSabotage(d))
     this.ws.on('sabotageFixed', (d) => this._receiveSabotageFixed(d))
     this.ws.on('sabotageFixProgress', (d) => {
       if (d.type === 'reactor') this._reactorFixed[d.point] = true
+    })
+    this.ws.on('taskDone', (d) => {
+      this._totalMissionsDone = d.totalDone
+      this._totalMissionsNeeded = d.totalNeeded
+      this._updateHUD()
     })
   }
 
@@ -892,10 +918,15 @@ this._createHUD()
 
   _handleKillMsg({ killerId, victimId }) {
     if (victimId === this.playerId) {
+      // Khi mình bị giết, spawn xác tại vị trí mình đang đứng
+      this._spawnCorpse(this.player.x, this.player.y, this.playerColor, this.playerId)
       this._becomeGhost()
     } else if (this.remotePlayers[victimId]) {
-      this.remotePlayers[victimId].die()
-      this.remotePlayers[victimId].becomeGhost()
+      const rp = this.remotePlayers[victimId]
+      // Spawn xác tại vị trí của người chơi bị giết
+      this._spawnCorpse(rp.x, rp.y, rp.color, victimId)
+      rp.die()
+      rp.becomeGhost()
     }
   }
 
@@ -904,19 +935,47 @@ this._createHUD()
       if (p.id === this.playerId) return
       if (!this.remotePlayers[p.id]) {
         this.remotePlayers[p.id] = new Player(this, p.x, p.y, p.color, false)
+        this.remotePlayers[p.id].playerId = p.id
         this.remotePlayers[p.id].setName(p.name)
         this.physics.add.collider(this.remotePlayers[p.id], this.wallGroup)
       }
       const rp = this.remotePlayers[p.id]
+      rp.playerId = p.id
+      if (rp.playerName !== p.name) rp.setName(p.name)
       rp.syncRemote(p)
-      if (p.isGhost || !p.alive) {
-        if (!rp._isGhost) {
-          rp.die()          // set dead texture before ghost visuals
-          rp.becomeGhost()  // only called once thanks to _isGhost guard
+      
+      const remoteIsGhost = p.isGhost || !p.alive
+      const localIsGhost = !this.player.alive
+
+      if (remoteIsGhost) {
+        // Nếu server báo là hồn ma mà client chưa có xác chết tương ứng -> spawn xác
+        if (!this.spawnedCorpseIds.has(p.id)) {
+          this._spawnCorpse(p.x, p.y, p.color, p.id)
         }
-        if (this.player.alive) { rp.setVisible(false); rp.nameLabel?.setVisible(false) }
+
+        if (!rp._isGhost) {
+          rp.die()          // Đặt texture xác chết trước khi thành hồn ma
+          rp.becomeGhost()  
+        }
+        
+        // LOGIC QUAN TRỌNG:
+        // Nếu người chơi khác là hồn ma, chỉ hiển thị nếu bản thân mình cũng là hồn ma
+        if (localIsGhost) {
+          rp.setVisible(true)
+          rp.setAlpha(0.4) // Hồn ma hiện mờ đối với hồn ma khác
+          rp.nameLabel?.setVisible(true)
+          rp.nameLabel?.setAlpha(0.5)
+        } else {
+          // Bạn còn sống nên không được thấy hồn ma
+          rp.setVisible(false)
+          rp.nameLabel?.setVisible(false)
+        }
       } else {
-        rp.setVisible(true); rp.nameLabel?.setVisible(true)
+        // Người chơi khác còn sống: Luôn hiển thị
+        rp.setVisible(true)
+        rp.setAlpha(1)
+        rp.nameLabel?.setVisible(true)
+        rp.nameLabel?.setAlpha(1)
       }
     })
     const ids = playerList.map(p => p.id)
@@ -951,6 +1010,7 @@ this._createHUD()
     if (!this.player.alive) {
       this.player.update(this.cursors, time)
       Object.values(this.remotePlayers).forEach(rp => rp.updateRemote(time.delta))
+      this._updateHUD()
       if (Phaser.Input.Keyboard.JustDown(this.chatKey)) this._openChat()
       // Ghost crewmate can still do tasks
       if (!this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.taskKey)) this._tryInteractTask()
@@ -990,7 +1050,7 @@ this._createHUD()
     if (this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.killKey)) this._tryKill()
     if (this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.ventKey)) this._tryVent()
     if (this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.sabotageKey)) {
-      if (this._sabotageMenu) this._closeSabotageMenu()
+      if (this._sabotageMenuOpen) this._closeSabotageMenu()
       else this._trySabotage()
     }
     if (Phaser.Input.Keyboard.JustDown(this.reportKey))    this._tryReport()

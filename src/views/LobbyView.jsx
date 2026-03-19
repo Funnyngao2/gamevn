@@ -64,7 +64,14 @@ export default function LobbyView() {
     
     s.off('youAreHost'); s.on('youAreHost', () => setIsHost(true))
     s.off('error'); s.on('error', d => showError(d.msg))
-    s.off('gameStart'); s.on('gameStart', d => startGame({ isImposter: d.isImposter, roomId: d.roomId, players: d.players }))
+    s.off('gameStart'); s.on('gameStart', d => startGame({
+      isImposter: d.isImposter,
+      roomId: d.roomId,
+      players: d.players,
+      assignedTasks: d.assignedTasks || [],
+      spawnX: d.spawnX,
+      spawnY: d.spawnY,
+    }))
 
     // Nếu đang có phòng (vừa quay lại từ game), xin lại state mới nhất để reset ready
     if (useAppStore.getState().currentRoom) {

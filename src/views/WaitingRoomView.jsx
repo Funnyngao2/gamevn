@@ -271,9 +271,51 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
         <motion.div className="player-grid-container"><div className="player-grid-header"><Rocket size={14} className="text-cyan-400" /><span className="text-white font-bold">{room.name}</span>{isHost && <span className="host-badge ml-auto"><Crown size={10} fill="currentColor" /> Chủ phòng</span>}</div>
           <div className="player-grid">{Array.from({ length: room.maxPlayers }).map((_, i) => {
             const p = room.players?.[i]; const isS = p && speakingPlayers[p.id]; const isM = p && p.mic; const col = COLOR_HEX[p?.color] || '#888'
-            return (<motion.div key={i} className="player-card" style={p?{background:`linear-gradient(160deg,${col}12,rgba(255,255,255,0.04))`, border:`1px solid ${p.ready?col+'60':col+'25'}`, boxShadow:isS?`0 0 30px ${col}60`:p.ready?`0 0 20px ${col}20`:'none'}:{background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.04)'}}>
-              {p ? (<><div className="player-avatar-container cursor-pointer relative" onClick={(e)=>handleAvatarClick(e, p)} style={{border:`2px solid ${col}${isS?'99':'50'}`}}><img src={`assets/Images/avatar/${AVATAR_MAP[p.color]}`} className="w-full h-full object-cover" />{isM && <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center"><Mic size={10} className="text-cyan-400" /></div>}{isS && <div className="absolute inset-0 flex items-center justify-center bg-cyan-400/20"><Volume2 size={24} className="text-white animate-pulse" /></div>}</div><p className="text-white text-[10px] font-bold">{p.name}</p><span className={`player-status-badge ${p.ready?'text-cyan-400':'text-white/30'}`}>{p.ready?<Check size={8}/>:null} {p.ready?'Sẵn sàng':'Chờ...'}</span></>) : (<div className="empty-slot cursor-pointer" onClick={()=>setShowInvite(true)}><div className="empty-slot-plus"><Plus size={18} /></div><span className="text-white/15 text-[9px]">Mời</span></div>)}
-            </motion.div>)
+            const cardStyle = p
+              ? {
+                  '--player-card-accent': col,
+                  background: `linear-gradient(160deg,${col}12,rgba(255,255,255,0.04))`,
+                  border: `1px solid ${p.ready ? col + '60' : col + '25'}`,
+                  boxShadow: isS ? `0 0 30px ${col}60` : p.ready ? `0 0 20px ${col}20` : 'none',
+                }
+              : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }
+            return (
+              <motion.div key={i} className="player-card" style={cardStyle}>
+                {p ? (
+                  <>
+                    <span className="player-card-border-run" aria-hidden>
+                      <span className="player-card-border-beam" />
+                    </span>
+                    <div className="player-card-inner">
+                      <div className="player-avatar-container cursor-pointer relative" onClick={(e) => handleAvatarClick(e, p)} style={{ border: `2px solid ${col}${isS ? '99' : '50'}` }}>
+                        <img src={`assets/Images/avatar/${AVATAR_MAP[p.color]}`} className="w-full h-full object-cover" />
+                        {isM && (
+                          <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center">
+                            <Mic size={10} className="text-cyan-400" />
+                          </div>
+                        )}
+                        {isS && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-cyan-400/20">
+                            <Volume2 size={24} className="text-white animate-pulse" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-white text-[10px] font-bold">{p.name}</p>
+                      <span className={`player-status-badge ${p.ready ? 'text-cyan-400' : 'text-white/30'}`}>
+                        {p.ready ? <Check size={8} /> : null} {p.ready ? 'Sẵn sàng' : 'Chờ...'}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="empty-slot cursor-pointer" onClick={() => setShowInvite(true)}>
+                    <div className="empty-slot-plus">
+                      <Plus size={18} />
+                    </div>
+                    <span className="text-white/15 text-[9px]">Mời</span>
+                  </div>
+                )}
+              </motion.div>
+            )
           })}</div>
         </motion.div>
 
@@ -293,25 +335,27 @@ export default function WaitingRoomView({ room, users, isHost, socketId, socket,
       </div>
 
       <div className="action-bar">
-        {!isHost && <div className="host-controls"><motion.button onClick={() => onReady(!isReady)} className="btn-action-primary" style={{background:isReady?'linear-gradient(135deg,#06b6d4,#8b5cf6)':'rgba(255,255,255,0.07)', color:isReady?'#000':'rgba(255,255,255,0.7)'}}>{isReady ? <CheckCircle2 size={18} /> : <Hand size={18} />} <span>{isReady?'Đã sẵn sàng':'Sẵn sàng'}</span></motion.button></div>}
+        {!isHost && (
+          <div className="host-controls">
+            <motion.button type="button" onClick={() => onReady(!isReady)}
+              className={`btn-action-primary ${isReady ? 'btn-ready-on' : 'btn-ready-off'}`}>
+              {isReady ? <CheckCircle2 size={18} /> : <Hand size={18} />}
+              <span>{isReady ? 'Đã sẵn sàng' : 'Sẵn sàng'}</span>
+            </motion.button>
+          </div>
+        )}
         {isHost && (
           <div className="host-controls">
-            <span className="start-status-text" style={{ color: canStart ? '#06b6d4' : 'rgba(255,255,255,0.4)' }}>
+            <span className={`start-status-text ${canStart ? 'start-status-text--can' : 'start-status-text--wait'}`}>
               {(room.players?.length || 0) < 2 ? 'Cần ít nhất 2 người'
                 : !allReady ? `Chờ ${nonHost.filter(p => !p.ready).length} người sẵn sàng...`
                 : '✅ Tất cả sẵn sàng!'}
             </span>
-            <motion.button whileHover={{ scale: canStart ? 1.02 : 1 }} whileTap={{ scale:0.96 }}
+            <motion.button type="button" whileHover={{ scale: canStart ? 1.02 : 1 }} whileTap={{ scale: 0.96 }}
               onClick={onStart}
-              className="btn-action-primary flex items-center justify-center gap-2"
-              style={{
-                background: canStart ? 'linear-gradient(135deg,#22c55e,#16a34a)' : 'rgba(255,255,255,0.05)',
-                color: canStart ? '#fff' : 'rgba(255,255,255,0.2)',
-                border: `1px solid ${canStart ? 'transparent' : 'rgba(255,255,255,0.07)'}`,
-                cursor: canStart ? 'pointer' : 'not-allowed',
-                boxShadow: canStart ? '0 4px 20px rgba(34,197,94,0.35)' : 'none',
-              }}>
-              <Play size={18} fill={canStart ? "currentColor" : "none"} />
+              disabled={!canStart}
+              className={`btn-action-primary ${canStart ? 'btn-start-on' : 'btn-start-off'}`}>
+              <Play size={18} fill={canStart ? 'currentColor' : 'none'} />
               <span>Bắt đầu trận</span>
             </motion.button>
           </div>

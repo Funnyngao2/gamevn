@@ -10,7 +10,10 @@ export const NO_OF_BOTS = 9
 export const KILL_COOLDOWN = 16000      // ms - 16s cooldown after each kill
 export const SABOTAGE_COOLDOWN = 30000  // ms
 export const VENT_COOLDOWN = 10000      // ms
-export const MEETING_COOLDOWN = 20000   // ms
+/** Server: sau họp khẩn (E), người gọi chờ trước khi E lại (client dùng mốc từ server) */
+export const EMERGENCY_E_COOLDOWN_AFTER_MEETING_MS = 10000
+/** Đồng bộ với server: số lần bấm E họp khẩn tối đa mỗi người mỗi trận */
+export const MAX_EMERGENCY_MEETINGS_PER_PLAYER = 2
 export const REACTOR_CRITICAL_TIME = 20000 // ms
 
 export const COLORS = ['red','blue','green','orange','yellow','pink','black','brown','purple','white']

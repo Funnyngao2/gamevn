@@ -232,19 +232,19 @@ export default function GameOverView() {
               </div>
 
               <div className="gameover-actions">
-                <motion.button
-                  onClick={returnToLobby}
-                  whileHover={{ scale: 1.03, boxShadow: `0 12px 40px ${accent}40` }}
-                  whileTap={{ scale: 0.98 }}
-                  className="gameover-primary-button"
+                <motion.div
+                  className="gameover-primary-button gameover-primary-button--noninteractive"
                   style={{
                     background: `linear-gradient(135deg, ${accent}, ${accent}dd)`,
                     color: isVictory ? '#000' : '#fff',
                     boxShadow: `0 8px 32px ${accent}35`,
-                  }}>
-                  <Home size={18} />
+                  }}
+                  role="status"
+                  aria-live="polite"
+                  aria-label={`Tự động quay lại phòng sau ${countdown} giây`}>
+                  <Home size={18} aria-hidden />
                   <span>Quay lại phòng ({countdown}s)</span>
-                </motion.button>
+                </motion.div>
 
                 <motion.button
                   onClick={handleMenu}

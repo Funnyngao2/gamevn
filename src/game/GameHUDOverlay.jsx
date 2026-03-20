@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '../store.js'
+import { MAX_EMERGENCY_MEETINGS_PER_PLAYER } from '../config.js'
 import './GameHUDOverlay.css'
 
 function useRegistryValue(gameRef, key) {
@@ -63,8 +64,8 @@ export default function GameHUDOverlay({ gameRef }) {
 
   const controlsHint = hud?.alive
     ? hud?.isImposter
-      ? 'WASD: Di chuyển | Q: Giết | X: Phá hoại | V: Cống | R: Báo xác'
-      : 'WASD: Di chuyển | F: Làm nhiệm vụ | E: Họp khẩn | R: Báo xác'
+      ? `WASD: Di chuyển | Q: Giết | X: Phá hoại | V: Cống | F: Nhiệm vụ giả / sửa đèn·lò | E: Họp khẩn (${MAX_EMERGENCY_MEETINGS_PER_PLAYER}) | R: Báo xác`
+      : `WASD: Di chuyển | F: Làm nhiệm vụ | E: Họp khẩn (${MAX_EMERGENCY_MEETINGS_PER_PLAYER} lần) | R: Báo xác`
     : null
 
   const alertKind = gameAlert?.type || 'info'

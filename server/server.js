@@ -11,7 +11,10 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || '*'
 const REACTOR_CRITICAL_TIME = 20000
 const KILL_COOLDOWN = 16000
 const SABOTAGE_COOLDOWN = 30000
-const MEETING_COOLDOWN = 20000
+/** Sau khi cuộc họp khẩn (E) kết thúc, người gọi không được bấm E lại trong khoảng này */
+const EMERGENCY_E_COOLDOWN_AFTER_MEETING_MS = 10000
+/** Mỗi crewmate chỉ được bấm nút họp khẩn (E) tối đa số lần này mỗi trận */
+const MAX_EMERGENCY_MEETINGS_PER_PLAYER = 2
 const INTERACT_RANGE = 80
 const KILL_RANGE = 95
 const REACTOR_FIX_POINT = { x: 3320, y: 1200 }  // reactor_a only
@@ -231,7 +234,8 @@ function isImpostorPlayer(p) {
 }
 
 function canUseEmergency(p) {
-  return !!p && isAliveState(p) && !isImpostorPlayer(p)
+  // Impostor cũng bấm E họp khẩn (giả làm crew); vẫn tốn lượt & kiểm tra server như crewmate
+  return !!p && isAliveState(p)
 }
 
 function broadcastMeetingState(roomId) {
@@ -348,6 +352,8 @@ function finishGame(roomId, winner) {
       player.ready = false
       player.role = undefined
       player.assignedTasks = undefined
+      player.emergencyMeetingsLeft = undefined
+      player.emergencyE_CooldownUntil = undefined
       player.state = null
     }
   })
@@ -415,6 +421,12 @@ function endMeeting(roomId, reason = 'timeout') {
   const result = computeMeetingResult(meeting)
   const ejectedSid = result.ejectedId
 
+  // Họp khẩn (E): sau khi họp kết thúc, người báo chờ trước khi dùng E lại
+  if (meeting.victimId == null && meeting.reporterId) {
+    const rep = players.get(meeting.reporterId)
+    if (rep) rep.emergencyE_CooldownUntil = Date.now() + EMERGENCY_E_COOLDOWN_AFTER_MEETING_MS
+  }
+
   if (ejectedSid) {
     const ep = ensurePlayerState(ejectedSid)
     if (ep) {
@@ -451,7 +463,11 @@ function getRoomPlayers(roomId) {
   if (!room) return []
   return [...room.players].map(sid => {
     const p = players.get(sid)
-    return p ? { id: sid, uuid: p.uuid, name: p.name, color: p.color, ready: p.ready || false, mic: p.mic || false, ...p.state } : null
+    if (!p) return null
+    const row = { id: sid, uuid: p.uuid, name: p.name, color: p.color, ready: p.ready || false, mic: p.mic || false, ...p.state }
+    if (typeof p.emergencyMeetingsLeft === 'number') row.emergencyMeetingsLeft = p.emergencyMeetingsLeft
+    if (typeof p.emergencyE_CooldownUntil === 'number') row.emergencyE_CooldownUntil = p.emergencyE_CooldownUntil
+    return row
   }).filter(Boolean)
 }
 
@@ -814,6 +830,8 @@ io.on('connection', (socket) => {
           isGhost: false,
           imposter: isImposter
         }
+        p.emergencyMeetingsLeft = MAX_EMERGENCY_MEETINGS_PER_PLAYER
+        p.emergencyE_CooldownUntil = undefined
         dbRun('UPDATE game_room_players SET role=? WHERE room_id=? AND socket_id=?', 
           [isImposter ? 'impostor' : 'crewmate', p.roomId, sid])
       }
@@ -948,11 +966,22 @@ io.on('connection', (socket) => {
     const p = players.get(socket.id); if (!p?.roomId) return
     const room = rooms.get(p.roomId); if (!room?.started) return
     if (!canUseEmergency(p)) return
+    if ((p.emergencyMeetingsLeft ?? 0) <= 0) {
+      socket.emit('reportFailed', { reason: 'no_emergency_left' })
+      return
+    }
     if (distance(p.state, EMERGENCY_BUTTON_POS) > 150) return
     const now = Date.now()
-    if (now - (room.lastMeetingAt || 0) < MEETING_COOLDOWN) return
-    room.lastMeetingAt = now
-    startMeeting(p.roomId, socket.id, null)
+    if (now < (p.emergencyE_CooldownUntil || 0)) {
+      socket.emit('reportFailed', {
+        reason: 'emergency_e_cooldown',
+        msLeft: Math.max(0, p.emergencyE_CooldownUntil - now),
+      })
+      return
+    }
+    const started = startMeeting(p.roomId, socket.id, null)
+    if (!started) return
+    p.emergencyMeetingsLeft = Math.max(0, (p.emergencyMeetingsLeft ?? MAX_EMERGENCY_MEETINGS_PER_PLAYER) - 1)
   })
 
   socket.on('vote', ({ targetId }) => {

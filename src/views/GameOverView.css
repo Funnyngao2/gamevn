@@ -275,6 +275,13 @@
   letter-spacing: 0.12em;
 }
 
+/* Chỉ hiển thị đếm ngược — không click (returnToLobby do interval) */
+.gameover-primary-button--noninteractive {
+  pointer-events: none;
+  cursor: default;
+  user-select: none;
+}
+
 .gameover-secondary-button {
   padding: 16px 32px;
   border: 1px solid rgba(255, 255, 255, 0.15);

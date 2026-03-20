@@ -86,18 +86,30 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   // Called every frame by GameScene.update() for local player
-  update(cursors, time) {
+  // moveStick: { x, y } từ joystick ảo — mỗi trục ~[-1,1], độ lớn theo kéo ra mép vòng
+  update(cursors, time, moveStick = null) {
     if (!this.isLocal) return
 
     let vx = 0, vy = 0
+    const sx = moveStick?.x ?? 0
+    const sy = moveStick?.y ?? 0
+    const stickMag2 = sx * sx + sy * sy
+    const STICK_DEAD2 = 0.015
 
-    if (cursors.left.isDown  || cursors.a?.isDown) { vx = -PLAYER_SPEED; this._dir = 'left' }
-    else if (cursors.right.isDown || cursors.d?.isDown) { vx =  PLAYER_SPEED; this._dir = 'right' }
-    
-    if (cursors.up.isDown    || cursors.w?.isDown) { vy = -PLAYER_SPEED; this._dir = 'up' }
-    else if (cursors.down.isDown  || cursors.s?.isDown) { vy =  PLAYER_SPEED; this._dir = 'down' }
+    if (stickMag2 > STICK_DEAD2) {
+      vx = sx * PLAYER_SPEED
+      vy = sy * PLAYER_SPEED
+      if (Math.abs(sx) >= Math.abs(sy)) this._dir = sx > 0 ? 'right' : 'left'
+      else this._dir = sy > 0 ? 'down' : 'up'
+    } else {
+      if (cursors.left.isDown || cursors.a?.isDown) { vx = -PLAYER_SPEED; this._dir = 'left' }
+      else if (cursors.right.isDown || cursors.d?.isDown) { vx = PLAYER_SPEED; this._dir = 'right' }
 
-    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
+      if (cursors.up.isDown || cursors.w?.isDown) { vy = -PLAYER_SPEED; this._dir = 'up' }
+      else if (cursors.down.isDown || cursors.s?.isDown) { vy = PLAYER_SPEED; this._dir = 'down' }
+
+      if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707 }
+    }
 
     this._moving = vx !== 0 || vy !== 0
 

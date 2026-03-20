@@ -1,3 +1,23 @@
+/* Màn hình họp khẩn / báo xác — 2s trước khi vào UI họp */
+.meeting-splash-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #020617;
+  pointer-events: none;
+}
+
+.meeting-splash-image {
+  width: min(96vw, 920px);
+  height: auto;
+  max-height: min(88vh, 640px);
+  object-fit: contain;
+  image-rendering: auto;
+}
+
 .meeting-overlay-backdrop {
   position: absolute;
   inset: 0;

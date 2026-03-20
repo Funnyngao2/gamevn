@@ -54,7 +54,7 @@ export default function MinimapOverlay({ gameRef }) {
 
   if (!mapData) return null
 
-  const { localPlayer, tasks, isImposter, mapW, mapH, sabotage } = mapData
+  const { localPlayer, tasks, mapW, mapH, sabotage } = mapData
   const worldW = mapW ?? MAP_W_DEFAULT
   const worldH = mapH ?? MAP_H_DEFAULT
 
@@ -118,8 +118,8 @@ export default function MinimapOverlay({ gameRef }) {
             )
           })()}
 
-          {/* Task hotspots (crewmate only) — glow + pin shape */}
-          {!isImposter && tasks?.map((t, i) => {
+          {/* Task hotspots — crew thật; impostor chỉ thấy nhiệm vụ giả (taskList cục bộ) */}
+          {tasks?.map((t, i) => {
             const p = worldToMap(t.x, t.y, W, H, worldW, worldH)
             const size = expanded ? 6 : 5
             const isDone = t.done

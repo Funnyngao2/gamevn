@@ -2,7 +2,7 @@
 import Phaser from 'phaser'
 import { Player } from '../../entities/Player.js'
 import { safePlay } from '../../utils/safePlay.js'
-import { NO_OF_MISSIONS, KILL_COOLDOWN, MEETING_COOLDOWN, REACTOR_CRITICAL_TIME, VENT_COOLDOWN, SABOTAGE_COOLDOWN } from '../../config.js'
+import { NO_OF_MISSIONS, KILL_COOLDOWN, MAX_EMERGENCY_MEETINGS_PER_PLAYER, REACTOR_CRITICAL_TIME, VENT_COOLDOWN, SABOTAGE_COOLDOWN } from '../../config.js'
 import { resolveTaskKind } from '../tasks/taskKindResolve.js'
 
 const INTERACT_RANGE = 80
@@ -165,6 +165,7 @@ export class GameScene extends Phaser.Scene {
 
     // --- GAME STATE ---
     this.missionsDone = 0
+    this.emergencyMeetingsLeft = MAX_EMERGENCY_MEETINGS_PER_PLAYER
     this.playing = true
     this.paused = false
     this.sabotageReactor = false
@@ -178,7 +179,8 @@ export class GameScene extends Phaser.Scene {
     this.killCooldownStart = 0  // will be set properly in _startKillCooldown
     this._killReady = false
     this.ventCooldownStart = 0
-    this.meetingCooldownStart = this.time.now
+    /** Mốc Date.now() (ms) từ server: trước mốc này không bấm E họp khẩn */
+    this.emergencyE_CooldownUntil = 0
     this.remotePlayers = {}
     this.corpses = this.add.group() // Group chứa các sprite xác chết
     this.spawnedCorpseIds = new Set() // Lưu ID đã để lại xác để tránh tạo trùng
@@ -188,6 +190,7 @@ export class GameScene extends Phaser.Scene {
 
 // --- HUD ---
 this._createHUD()
+    this._createVirtualJoystick()
 
     this._chatBridge = { alive: true, isImposter: this.isImposter }
     this.game.registry.set('chatBridge', this._chatBridge)
@@ -263,11 +266,9 @@ this._createHUD()
 
   _createHUD() {
     // Chuỗi hiển thị (Q giết, Phá hoại, gợi ý phím) do React build từ hudData
-    const isImp = this.player.isImposter
-    if (!isImp) this._createTaskList()
-
-    // Draw task zone markers on map (crewmate only)
-    if (!isImp) this._drawTaskMarkers()
+    // Crewmate: nhiệm vụ thật. Impostor: cùng danh sách từ server để giả làm; taskDone không được gửi.
+    this._createTaskList()
+    this._drawTaskMarkers()
 
     // HUD/minimap/meeting handled by React overlays
     this._updateHUD()
@@ -336,9 +337,16 @@ this._createHUD()
     const task = this.taskList.find(t => t.id === taskId && !t.done)
     if (!task) return
     task.done = true
-    this.missionsDone++
     this._lastNearTaskId = null // Reset khi xong
     safePlay(this, 'task_complete')
+    if (this.player.isImposter) {
+      // Chỉ hiệu ứng cục bộ — không emit, không tăng tiến độ chung
+      this._refreshTaskMarkers()
+      this._updateInteractionPrompt()
+      this._updateHUD()
+      return
+    }
+    this.missionsDone++
     if (this.ws) this.ws.emit('taskDone', { taskId })
     this._refreshTaskMarkers()
     this._checkWinConditions()
@@ -452,7 +460,7 @@ this._createHUD()
       }
     }
 
-    if (!this.player.isImposter && !prompt && !this.sabotageReactor && !this.sabotageLights) {
+    if (!prompt && !this.sabotageReactor && !this.sabotageLights) {
       const nearTask = this.taskList
         ? this.taskList.find(t => !t.done && Phaser.Math.Distance.Between(px, py, t.x, t.y) < INTERACT_RANGE)
         : null
@@ -461,7 +469,6 @@ this._createHUD()
         prompt = `[F] ${nearTask.label}`
         this._lastNearTaskId = nearTask.id
       } else {
-        // Nếu vừa rời khỏi vùng của task đang mở, tự động đóng lại
         if (this._lastNearTaskId) {
           this.game.registry.get('onOpenTask')?.(null)
           this._lastNearTaskId = null
@@ -469,11 +476,15 @@ this._createHUD()
       }
     }
 
-    if (!prompt && !this.player.isImposter) {
+    if (!prompt) {
       const dist = Phaser.Math.Distance.Between(px, py, this.emergencyBtnPos.x, this.emergencyBtnPos.y)
       if (dist < INTERACT_RANGE) {
-        const meetElapsed = this.time.now - this.meetingCooldownStart
-        prompt = meetElapsed >= MEETING_COOLDOWN ? '[E] Họp khẩn cấp' : 'Họp: chờ cooldown'
+        const left = this.emergencyMeetingsLeft ?? 0
+        const now = Date.now()
+        const cdUntil = this.emergencyE_CooldownUntil || 0
+        if (left <= 0) prompt = 'Đã hết lượt họp khẩn (E)'
+        else if (now >= cdUntil) prompt = `[E] Họp khẩn cấp (còn ${left})`
+        else prompt = `Họp khẩn: chờ ${Math.ceil((cdUntil - now) / 1000)}s`
       }
     }
 
@@ -557,19 +568,16 @@ this._createHUD()
   }
 
   _applyLightsEffect(on) {
-    // Hiệu ứng tắt đèn được xử lý hoàn toàn bởi React overlay (LightsDarkOverlay)
-    // Impostor không bị ảnh hưởng
-    if (this.player?.isImposter) return
+    // React LightsDarkOverlay — crew & impostor đều thấy tối để có thể giả sửa / sửa thật
     if (!on) {
       this.game.registry.set('lightsDarkData', { active: false })
     }
-    // Khi on=true, _updateLightsOverlay() sẽ tự bridge tọa độ mỗi frame
+    // Khi on=true, _updateLightsOverlay() bridge tọa độ mỗi frame
   }
 
   _updateLightsFixOverlay() {
     if (!this.game?.registry) return
-    // Impostor không fix lights, và không hiện popup sau khi đã toggle xong
-    if (!this.sabotageLights || !this._lightsFixPoint || this.player.isImposter || this._lightsToggled) {
+    if (!this.sabotageLights || !this._lightsFixPoint || this._lightsToggled) {
       if (this._lightsHoldStart) this._lightsHoldStart = null
       this.game.registry.set('lightsFixData', { visible: false })
       return
@@ -601,8 +609,7 @@ this._createHUD()
 
   _updateLightsOverlay() {
     if (!this.game?.registry) return
-    // Tắt overlay nếu không có sabotage, là impostor, hoặc đã toggle xong (chờ server confirm)
-    if (!this.sabotageLights || this.player?.isImposter || this._lightsToggled) {
+    if (!this.sabotageLights || this._lightsToggled) {
       this.game.registry.set('lightsDarkData', { active: false })
       return
     }
@@ -654,7 +661,6 @@ this._createHUD()
     }
 
     if (this.sabotageLights) {
-      if (this.player.isImposter) return false  // impostor không fix lights
       const d = Phaser.Math.Distance.Between(px, py, this._lightsFixPoint.x, this._lightsFixPoint.y)
       if (d < INTERACT_RANGE) {
         const HOLD = 1500
@@ -778,8 +784,8 @@ this._createHUD()
 
   _tryEmergency() {
     if (!this.player.alive || this.player.inVent) return
-    if (this.player.isImposter) return
-    if (this.time.now - this.meetingCooldownStart < MEETING_COOLDOWN) return
+    if ((this.emergencyMeetingsLeft ?? 0) <= 0) return
+    if (Date.now() < (this.emergencyE_CooldownUntil || 0)) return
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.emergencyBtnPos.x, this.emergencyBtnPos.y)
     if (dist < INTERACT_RANGE) {
       if (this.ws) this.ws.emit('emergency')
@@ -790,7 +796,6 @@ this._createHUD()
     safePlay(this, victimId ? 'report_Bodyfound' : 'alarm_emergencymeeting')
     this.bgMusic?.stop()
     this.paused = true
-    this.meetingCooldownStart = this.time.now
     this._meetingStartTime = this.time.now
     this.game.registry.set('meetingActive', true)
     this.game.registry.get('onPrompt')?.(null)
@@ -862,7 +867,89 @@ this._createHUD()
   }
 
   // --- GHOST SYSTEM ---
-  _becomeGhost() {
+  _destroyLocalDeathAnimation() {
+    if (this._deathAnimTimer) {
+      this._deathAnimTimer.remove(false)
+      this._deathAnimTimer = null
+    }
+    if (this._deathAnimDoneTimer) {
+      this._deathAnimDoneTimer.remove(false)
+      this._deathAnimDoneTimer = null
+    }
+    if (this._deathAnimContainer) {
+      this._deathAnimContainer.destroy(true)
+      this._deathAnimContainer = null
+    }
+  }
+
+  /** Fullscreen kill1→kill18 + imposter_kill_victim (preload), sau đó toast gợi ý chat */
+  _showLocalDeathAnimation() {
+    this._destroyLocalDeathAnimation()
+    if (!this.textures.exists('kill1')) return
+
+    safePlay(this, 'imposter_kill_victim', { volume: 0.85 })
+
+    const w = this.scale.displaySize.width
+    const h = this.scale.displaySize.height
+    const cx = w * 0.5
+    const cy = h * 0.5
+    const depth = 16000
+
+    const container = this.add.container(cx, cy).setScrollFactor(0).setDepth(depth)
+    this._deathAnimContainer = container
+
+    const dim = this.add.rectangle(0, 0, w + 4, h + 4, 0x020617, 0.82).setScrollFactor(0)
+    container.add(dim)
+
+    const img = this.add.image(0, h * 0.02, 'kill1').setScrollFactor(0)
+    const fr = this.textures.getFrame('kill1')
+    const fit = Math.min((w * 0.78) / fr.width, (h * 0.52) / fr.height)
+    img.setScale(fit)
+    container.add(img)
+
+    const fs = Math.max(18, Math.round(Math.min(w, h) * 0.048))
+    const title = this.add.text(0, -h * 0.34, 'BẠN ĐÃ CHẾT', {
+      fontFamily: 'system-ui, Segoe UI, Arial, sans-serif',
+      fontSize: `${fs}px`,
+      color: '#f87171',
+      fontStyle: 'bold',
+      stroke: '#0f172a',
+      strokeThickness: 8,
+    }).setOrigin(0.5).setScrollFactor(0)
+    container.add(title)
+
+    const FRAME_MS = 52
+    const HOLD_LAST_MS = 400
+    let frame = 1
+
+    // 17 lần đổi ảnh: kill2 … kill18 (kill1 đã hiển thị sẵn)
+    this._deathAnimTimer = this.time.addEvent({
+      delay: FRAME_MS,
+      repeat: 16,
+      callback: () => {
+        frame++
+        const key = `kill${frame}`
+        if (this.textures.exists(key)) img.setTexture(key)
+      },
+    })
+
+    const totalMs = 17 * FRAME_MS + HOLD_LAST_MS
+    this._deathAnimDoneTimer = this.time.delayedCall(totalMs, () => {
+      this._deathAnimDoneTimer = null
+      if (!this.sys?.isActive()) return
+      this._destroyLocalDeathAnimation()
+      this.game.registry.get('onAlert')?.('👻 Bạn đã chết\n[T] Chat hồn ma  |  [L] Rời trận', 'info', 5000)
+      const pending = this._pendingGameEnd
+      this._pendingGameEnd = null
+      if (pending) this._endGame(pending.winner)
+    })
+  }
+
+  /**
+   * @param {{ showKillPresentation?: boolean }} opts - Chuỗi kill1–18 + SFX chỉ khi `showKillPresentation: true` (bị impostor giết)
+   */
+  _becomeGhost(opts = {}) {
+    const showKillPresentation = opts.showKillPresentation === true
     if (!this.player.alive) return  // already ghost
     
     // Đóng tất cả overlay đang mở khi chết
@@ -870,6 +957,11 @@ this._createHUD()
     this.game.registry.set('reactorFixData', { visible: false })
     this.game.registry.set('lightsFixData', { visible: false })
     this._lastNearTaskId = null
+
+    if (showKillPresentation) this._showLocalDeathAnimation()
+    else {
+      this.game.registry.get('onAlert')?.('👻 Bạn đã chết\n[T] Chat hồn ma  |  [L] Rời trận', 'info', 4000)
+    }
 
     this.player.die()
     this.player.setAlpha(0.45)
@@ -882,7 +974,6 @@ this._createHUD()
     // Update chat bridge state
     if (this._chatBridge) this._chatBridge.alive = false
     this.game.registry.set('chatBridge', { ...this._chatBridge, alive: false })
-    this.game.registry.get('onAlert')?.('👻 Bạn đã chết\n[T] Chat hồn ma  |  [L] Rời trận', 'info', 4000)
     this._updateHUD()
     // L key to leave game
     this.leaveKey = this.input.keyboard.addKey('L')
@@ -909,9 +1000,21 @@ this._createHUD()
     events.forEach(evt => this.ws.off(evt))
   }
 
+  /** Nhận gameover từ server — chờ hết hiệu ứng chết (kill1–18) nếu đang phát */
+  _onGameOverMessage(d) {
+    const winner = d?.winner
+    if (this._deathAnimContainer) {
+      this._pendingGameEnd = { winner }
+      return
+    }
+    this._endGame(winner)
+  }
+
   _endGame(winner) {
     if (!this.playing) return
+    this._pendingGameEnd = null
     this.playing = false
+    this._destroyLocalDeathAnimation()
     // Cleanup visibility listener và native interval
     if (this._onVisibilityChange) {
       document.removeEventListener('visibilitychange', this._onVisibilityChange)
@@ -995,12 +1098,23 @@ this._createHUD()
     this.ws.on('kill',          (d) => this._handleKillMsg(d))
     this.ws.on('meeting',       (d) => this._startMeeting(d.reporterId, d.victimId))
     this.ws.on('reportFailed',  (d) => {
-      console.warn('📛 Báo xác thất bại:', d.reason, d.dist != null ? `(khoảng cách: ${d.dist})` : '')
-      this.game.registry.get('onAlert')?.(`Không thể báo xác: ${d.reason}`, 'info', 3000)
+      console.warn('📛 Báo xác / họp khẩn thất bại:', d.reason, d.dist != null ? `(khoảng cách: ${d.dist})` : '')
+      const msg = {
+        no_emergency_left: `Bạn đã hết lượt họp khẩn cấp (tối đa ${MAX_EMERGENCY_MEETINGS_PER_PLAYER} lần mỗi trận).`,
+        no_victim: 'Không xác định được xác.',
+        victim_not_found: 'Không tìm thấy nạn nhân.',
+        victim_other_room: 'Xác không thuộc phòng này.',
+        reporter_dead: 'Người chết không thể báo cáo.',
+        victim_alive: 'Mục tiêu vẫn còn sống.',
+        too_far: 'Bạn đứng quá xa xác.',
+        meeting_already_active: 'Đang có cuộc họp.',
+        emergency_e_cooldown: `Họp khẩn (E) đang hồi: chờ thêm ${Math.ceil((d.msLeft || 0) / 1000)}s.`,
+      }[d.reason] || `Thao tác thất bại: ${d.reason}`
+      this.game.registry.get('onAlert')?.(msg, 'info', 3500)
     })
     this.ws.on('meetingState',  (d) => this.game.registry.get('onMeetingState')?.(d))
     this.ws.on('meetingResult', (d) => this.game.registry.get('onMeetingResult')?.(d))
-    this.ws.on('gameover',      (d) => this._endGame(d.winner))
+    this.ws.on('gameover',      (d) => this._onGameOverMessage(d))
     this.ws.on('returnToLobby', (d) => this._handleReturnToLobby(d))
     this.ws.on('chat',          (d) => this._receiveChatMessage(d))
     this.ws.on('vote',          (d) => this.game.registry.get('onMeetingVote')?.(d))
@@ -1066,7 +1180,7 @@ this._createHUD()
     if (victimId === this.playerId) {
       // Khi mình bị giết, spawn xác tại vị trí mình đang đứng
       this._spawnCorpse(this.player.x, this.player.y, this.playerColor, this.playerId)
-      this._becomeGhost()
+      this._becomeGhost({ showKillPresentation: true })
     } else if (this.remotePlayers[victimId]) {
       const rp = this.remotePlayers[victimId]
       // Spawn xác tại vị trí của người chơi bị giết
@@ -1077,6 +1191,16 @@ this._createHUD()
   }
 
   _handlePlayers(playerList) {
+    const localRow = playerList.find(p => String(p.id) === String(this.playerId))
+    if (localRow) {
+      if (typeof localRow.emergencyMeetingsLeft === 'number') {
+        this.emergencyMeetingsLeft = localRow.emergencyMeetingsLeft
+      }
+      this.emergencyE_CooldownUntil = typeof localRow.emergencyE_CooldownUntil === 'number'
+        ? localRow.emergencyE_CooldownUntil
+        : 0
+    }
+
     playerList.forEach(p => {
       if (p.id === this.playerId) return
       if (!this.remotePlayers[p.id]) {
@@ -1149,12 +1273,138 @@ this._createHUD()
     })
   }
 
+  _shouldShowVirtualJoystick() {
+    if (typeof window === 'undefined') return false
+    try {
+      if (window.matchMedia('(pointer: coarse)').matches) return true
+    } catch (e) { /* ignore */ }
+    if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) return true
+    if (window.innerWidth <= 900) return true
+    return false
+  }
+
+  _createVirtualJoystick() {
+    if (!this._shouldShowVirtualJoystick()) return
+
+    const marginX = 88
+    const marginY = 108
+    this._vjLocal = new Phaser.Math.Vector2()
+    this._vj = {
+      container: null,
+      base: null,
+      thumb: null,
+      maxR: 50,
+      active: false,
+      pointerId: null,
+      vx: 0,
+      vy: 0,
+    }
+
+    const cont = this.add.container(0, 0).setScrollFactor(0).setDepth(10000)
+
+    const base = this.add.circle(0, 0, 58, 0x0d1b2a, 0.62)
+    base.setStrokeStyle(2, 0x22d3ee, 0.35)
+    const thumb = this.add.circle(0, 0, 26, 0xffffff, 0.48)
+    thumb.setStrokeStyle(1, 0x22d3ee, 0.5)
+    cont.add([base, thumb])
+
+    base.setInteractive(new Phaser.Geom.Circle(0, 0, 70), Phaser.Geom.Circle.Contains)
+
+    base.on('pointerdown', (pointer) => {
+      this._vj.active = true
+      this._vj.pointerId = pointer.id
+      this._vjPointerUpdate(pointer)
+    })
+
+    this._vj.container = cont
+    this._vj.base = base
+    this._vj.thumb = thumb
+
+    this._vjLayoutFn = () => {
+      if (!this._vj?.container) return
+      const h = this.scale.displaySize.height
+      this._vj.container.setPosition(marginX, Math.max(marginX, h - marginY))
+    }
+    this._vjLayoutFn()
+    this.scale.on('resize', this._vjLayoutFn, this)
+
+    this.input.on('pointermove', this._vjOnMove, this)
+    this.input.on('pointerup', this._vjOnUp, this)
+    this.input.on('pointerupoutside', this._vjOnUp, this)
+
+    this.events.once('shutdown', () => this._destroyVirtualJoystick())
+  }
+
+  _destroyVirtualJoystick() {
+    if (!this._vj) return
+    this.input.off('pointermove', this._vjOnMove, this)
+    this.input.off('pointerup', this._vjOnUp, this)
+    this.input.off('pointerupoutside', this._vjOnUp, this)
+    if (this._vjLayoutFn) this.scale.off('resize', this._vjLayoutFn, this)
+    this._vj.container?.destroy()
+    this._vj = null
+    this._vjLayoutFn = null
+    this._vjLocal = null
+  }
+
+  _vjPointerUpdate(pointer) {
+    if (!this._vj?.active || pointer.id !== this._vj.pointerId) return
+
+    const maxR = this._vj.maxR
+    const dead = maxR * 0.12
+
+    this._vj.container.getWorldTransformMatrix().applyInverse(pointer.worldX, pointer.worldY, this._vjLocal)
+    const dx = this._vjLocal.x
+    const dy = this._vjLocal.y
+    const len = Math.hypot(dx, dy)
+
+    if (len < dead) {
+      this._vj.vx = 0
+      this._vj.vy = 0
+      this._vj.thumb.setPosition(0, 0)
+      return
+    }
+
+    const capped = Math.min(len, maxR)
+    const nx = dx / len
+    const ny = dy / len
+
+    this._vj.thumb.setPosition(nx * capped, ny * capped)
+
+    const mag = capped / maxR
+    this._vj.vx = nx * mag
+    this._vj.vy = ny * mag
+  }
+
+  _vjOnMove(pointer) {
+    if (!this._vj?.active) return
+    if (pointer.id !== this._vj.pointerId) return
+    this._vjPointerUpdate(pointer)
+  }
+
+  _vjOnUp(pointer) {
+    if (!this._vj?.active) return
+    if (pointer.id !== this._vj.pointerId) return
+    this._vj.active = false
+    this._vj.pointerId = null
+    this._vj.vx = 0
+    this._vj.vy = 0
+    this._vj.thumb.setPosition(0, 0)
+  }
+
+  _getMoveStick() {
+    if (!this._vj) return null
+    const { vx, vy } = this._vj
+    if (vx * vx + vy * vy < 0.008) return null
+    return { x: vx, y: vy }
+  }
+
   update(time) {
     if (!this.playing || this.paused) return
 
     // Ghost can still move, do tasks (crewmate), and chat
     if (!this.player.alive) {
-      this.player.update(this.cursors, time)
+      this.player.update(this.cursors, time, this._getMoveStick())
       Object.values(this.remotePlayers).forEach(rp => rp.updateRemote(time.delta))
       this._updateHUD()
       if (Phaser.Input.Keyboard.JustDown(this.chatKey)) this._openChat()
@@ -1186,7 +1436,7 @@ this._createHUD()
       return
     }
 
-    this.player.update(this.cursors, time)
+    this.player.update(this.cursors, time, this._getMoveStick())
     // Interpolate all remote players every frame
     Object.values(this.remotePlayers).forEach(rp => rp.updateRemote(time.delta))
     this._updateHUD()
@@ -1208,10 +1458,8 @@ this._createHUD()
     // Hold F để fix sabotage (cả imposter lẫn crewmate)
     if (this.taskKey.isDown && (this.sabotageReactor || this.sabotageLights)) {
       this._tryFixSabotage()
-    } else if (!this.player.isImposter) {
-      if (Phaser.Input.Keyboard.JustDown(this.taskKey) && !this.sabotageReactor && !this.sabotageLights) {
-        this._tryInteractTask()
-      }
+    } else if (Phaser.Input.Keyboard.JustDown(this.taskKey) && !this.sabotageReactor && !this.sabotageLights) {
+      this._tryInteractTask()
     }
     if (!this.taskKey.isDown && this.sabotageLights) {
       this._lightsHoldStart = null

@@ -11,15 +11,46 @@ function getColor(players, id) {
   return players.find(p => String(p.id) === String(id))?.color || 'white'
 }
 
+const EMERGENCY_SPLASH_COLORS = new Set(['blue', 'green', 'orange', 'red', 'yellow'])
+
+function emergencyMeetingSplashSrc(players, reporterId) {
+  const c = getColor(players, reporterId)
+  const key = EMERGENCY_SPLASH_COLORS.has(c) ? c : 'blue'
+  return `assets/Images/Alerts/emergency_meeting_${key}.png`
+}
+
+function buildInitialMeetingMessages(phase) {
+  const p = phase || 'discussion'
+  const msgs = [{ system: true, text: '── Giai đoạn thảo luận ──' }]
+  if (p === 'vote' || p === 'resolving' || p === 'result') {
+    msgs.push({ system: true, text: '── Giai đoạn bỏ phiếu ──' })
+  }
+  return msgs
+}
+
 export default function MeetingOverlay({ gameRef, socket }) {
   const [meeting, setMeeting] = useState(null)
+  const [showMeetingSplash, setShowMeetingSplash] = useState(false)
+  const [splashImageSrc, setSplashImageSrc] = useState(null)
   const [chatInput, setChatInput] = useState('')
   const timerRef = useRef(null)
+  const splashTimerRef = useRef(null)
+  const pendingMeetingStartRef = useRef(null)
+  const pendingMeetingStateRef = useRef(null)
 
   const clearTimer = () => {
     if (timerRef.current) clearInterval(timerRef.current)
     timerRef.current = null
   }
+
+  const clearSplashTimer = () => {
+    if (splashTimerRef.current) {
+      clearTimeout(splashTimerRef.current)
+      splashTimerRef.current = null
+    }
+  }
+
+  const MEETING_SPLASH_MS = 2000
 
   useEffect(() => {
     let cancelled = false
@@ -35,31 +66,52 @@ export default function MeetingOverlay({ gameRef, socket }) {
       }
       boundGame = game
 
-      game.registry.set('onMeetingStart', ({ players, localPlayerId, reporterId, victimId }) => {
-        clearTimer()
-        const title = victimId
-          ? `${getName(players, reporterId)} báo cáo xác chết!`
-          : `${getName(players, reporterId)} triệu tập họp khẩn!`
+      const flushPendingMeeting = () => {
+        const p = pendingMeetingStartRef.current
+        pendingMeetingStartRef.current = null
+        splashTimerRef.current = null
+        setShowMeetingSplash(false)
+        setSplashImageSrc(null)
+        if (!p) return
+
+        const st = pendingMeetingStateRef.current
+        const phase = st?.phase || 'discussion'
+        const phaseEndsAt = st?.phaseEndsAt || null
+        const title = p.victimId
+          ? `${getName(p.players, p.reporterId)} báo cáo xác chết!`
+          : `${getName(p.players, p.reporterId)} triệu tập họp khẩn!`
 
         setMeeting({
-          players,
-          localPlayerId,
-          reporterId,
-          victimId,
+          players: p.players,
+          localPlayerId: p.localPlayerId,
+          reporterId: p.reporterId,
+          victimId: p.victimId,
           title,
-          phase: 'discussion',
-          timer: 0,
-          currentSpeakerId: null,
-          phaseEndsAt: null,
+          phase,
+          timer: phaseEndsAt ? Math.max(0, Math.ceil((phaseEndsAt - Date.now()) / 1000)) : 0,
+          currentSpeakerId: st?.currentSpeakerId || null,
+          phaseEndsAt,
           votes: {},
           myVote: null,
-          waitingResult: false,
+          waitingResult: phase === 'resolving',
           result: null,
-          messages: [{ system: true, text: '── Giai đoạn thảo luận ──' }],
+          messages: buildInitialMeetingMessages(phase),
         })
+      }
+
+      game.registry.set('onMeetingStart', ({ players, localPlayerId, reporterId, victimId, gameMode }) => {
+        clearTimer()
+        clearSplashTimer()
+        pendingMeetingStateRef.current = null
+        pendingMeetingStartRef.current = { players, localPlayerId, reporterId, victimId, gameMode }
+        setMeeting(null)
+        setSplashImageSrc(emergencyMeetingSplashSrc(players, reporterId))
+        setShowMeetingSplash(true)
+        splashTimerRef.current = setTimeout(flushPendingMeeting, MEETING_SPLASH_MS)
       })
 
       game.registry.set('onMeetingState', ({ phase, currentSpeakerId, phaseEndsAt }) => {
+        pendingMeetingStateRef.current = { phase, currentSpeakerId, phaseEndsAt }
         setMeeting(prev => {
           if (!prev) return prev
 
@@ -136,6 +188,11 @@ export default function MeetingOverlay({ gameRef, socket }) {
 
       game.registry.set('onMeetingAbort', () => {
         clearTimer()
+        clearSplashTimer()
+        pendingMeetingStartRef.current = null
+        pendingMeetingStateRef.current = null
+        setShowMeetingSplash(false)
+        setSplashImageSrc(null)
         setMeeting(null)
         game.registry.get('handleMeetingAbort')?.()
       })
@@ -146,6 +203,7 @@ export default function MeetingOverlay({ gameRef, socket }) {
     return () => {
       cancelled = true
       clearTimer()
+      clearSplashTimer()
       if (rafId) cancelAnimationFrame(rafId)
       if (boundGame) {
         boundGame.registry.remove?.('onMeetingStart')
@@ -204,6 +262,21 @@ export default function MeetingOverlay({ gameRef, socket }) {
   const isLocalAlive = meeting?.players?.find(p => String(p.id) === String(meeting.localPlayerId))?.alive !== false
 
   return (
+    <>
+    <AnimatePresence>
+      {showMeetingSplash && splashImageSrc && (
+        <motion.div
+          key="meeting-emergency-splash"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="meeting-splash-backdrop"
+          aria-hidden>
+          <img src={splashImageSrc} alt="" className="meeting-splash-image" draggable={false} />
+        </motion.div>
+      )}
+    </AnimatePresence>
     <AnimatePresence>
       {meeting && (
         <motion.div
@@ -356,5 +429,6 @@ export default function MeetingOverlay({ gameRef, socket }) {
         </motion.div>
       )}
     </AnimatePresence>
+    </>
   )
 }

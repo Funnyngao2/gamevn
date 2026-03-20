@@ -10,6 +10,9 @@ import GameChatOverlay from './GameChatOverlay.jsx'
 import GameHUDOverlay from './GameHUDOverlay.jsx'
 import MeetingOverlay from './MeetingOverlay.jsx'
 import SabotageOverlay from './SabotageOverlay.jsx'
+import ReactorFixOverlay from './ReactorFixOverlay.jsx'
+import LightsFixOverlay from './LightsFixOverlay.jsx'
+import LightsDarkOverlay from './LightsDarkOverlay.jsx'
 
 const TIPS = [
   'Đừng tin tưởng ai cả...',
@@ -157,7 +160,7 @@ function RoleRevealOverlay({ isImposter, playerColor, onDone }) {
 export default function PhaserGame({ visible }) {
   const containerRef = useRef(null)
   const gameRef      = useRef(null)
-  const { gameData, playerName, playerColor, endGame, setGameAlert, setGamePrompt, setActiveTask } = useAppStore()
+  const { gameData, playerName, playerColor, endGame, setGameAlert, setGamePrompt, activeTask, setActiveTask } = useAppStore()
   const [loadPct,    setLoadPct]    = useState(0)
   const [showLoad,   setShowLoad]   = useState(false)
   const [tipIdx,     setTipIdx]     = useState(0)
@@ -212,7 +215,10 @@ export default function PhaserGame({ visible }) {
       }))
       game.registry.set('onAlert',     (text, type, duration) => setGameAlert({ text, type, duration }))
       game.registry.set('onPrompt',    (text) => setGamePrompt(text ? { text } : null))
-      game.registry.set('onOpenTask',  (id, name, kind) => setActiveTask({ id, name, kind }))
+      game.registry.set('onOpenTask',  (id, name, kind) => {
+        if (!id) setActiveTask(null)
+        else setActiveTask({ id, name, kind })
+      })
       game.registry.set('onLoadProgress', (v) => setLoadPct(Math.round(v * 100)))
       game.registry.set('onLoadComplete', () => { setLoadPct(100); setTimeout(() => setShowLoad(false), 600) })
       game.registry.set('onRoleReveal',   (isImposter, color) => setRoleReveal({ isImposter, playerColor: color }))
@@ -242,12 +248,15 @@ export default function PhaserGame({ visible }) {
     <>
       <div ref={containerRef} style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', overflow: 'hidden', display: visible ? 'block' : 'none', zIndex: 0 }} />
       <AnimatePresence>{visible && <GameHUDOverlay gameRef={gameRef} />}</AnimatePresence>
-      <AnimatePresence>{visible && <TaskOverlay />}</AnimatePresence>
+      <AnimatePresence>{visible && activeTask && <TaskOverlay task={activeTask} />}</AnimatePresence>
       <AnimatePresence>{visible && showLoad && <GameLoadingScreen pct={loadPct} tip={TIPS[tipIdx]} />}</AnimatePresence>
       <AnimatePresence>{visible && roleReveal && <RoleRevealOverlay key="role-reveal" isImposter={roleReveal.isImposter} playerColor={roleReveal.playerColor} onDone={() => setRoleReveal(null)} />}</AnimatePresence>
       {visible && <MinimapOverlay gameRef={gameRef} />}
       {visible && <MeetingOverlay gameRef={gameRef} socket={getSocket()} />}
       {visible && <SabotageOverlay gameRef={gameRef} />}
+      {visible && <ReactorFixOverlay gameRef={gameRef} />}
+      {visible && <LightsDarkOverlay gameRef={gameRef} />}
+      {visible && <LightsFixOverlay gameRef={gameRef} />}
       {visible && !showLoad && !roleReveal && (
         <GameChatOverlay
           gameRef={gameRef}

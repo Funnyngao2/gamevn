@@ -1,7 +1,8 @@
 .sabotage-overlay-backdrop {
   position: absolute;
   inset: 0;
-  z-index: 85;
+  /* Ensure sabotage menu appears above chat overlay when overlapping */
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -31,7 +32,7 @@
 .sabotage-overlay-eyebrow {
   margin: 0;
   color: #f87171;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.22em;
@@ -40,7 +41,7 @@
 .sabotage-overlay-title {
   margin: 4px 0 0;
   color: #fff;
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 900;
 }
 
@@ -92,7 +93,7 @@
 }
 
 .sabotage-overlay-action-title {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -109,13 +110,13 @@
 .sabotage-overlay-action-text {
   margin: 6px 0 0;
   color: rgba(255, 255, 255, 0.55);
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .sabotage-overlay-hint {
   margin: 16px 0 0;
   color: rgba(255, 255, 255, 0.25);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-align: center;
   text-transform: uppercase;

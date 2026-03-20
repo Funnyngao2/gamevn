@@ -1,0 +1,112 @@
+.reactor-fix-root {
+  position: fixed;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  background: rgba(10, 5, 20, 0.93);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-radius: 16px;
+  padding: 18px 28px;
+  min-width: 300px;
+  max-width: 380px;
+  box-shadow: 0 0 40px rgba(239, 68, 68, 0.2), 0 8px 32px rgba(0,0,0,0.6);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.reactor-fix-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.reactor-fix-title {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #ef4444;
+  text-shadow: 0 0 12px rgba(239,68,68,0.5);
+}
+
+.reactor-fix-subtitle {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+  margin: 0;
+}
+
+.reactor-fix-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.reactor-fix-bar-bg {
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.reactor-fix-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  min-width: 0;
+}
+
+.reactor-fix-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.reactor-fix-bar-pct {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.7);
+}
+
+.reactor-fix-fixers {
+  font-size: 11px;
+  color: rgba(255,255,255,0.45);
+}
+
+.reactor-fix-milestones {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+.reactor-fix-milestone {
+  font-size: 11px;
+  color: rgba(255,255,255,0.3);
+  transition: color 0.3s;
+}
+
+.reactor-fix-milestone.done {
+  color: #4ade80;
+}
+
+.reactor-fix-timer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.reactor-fix-timer-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.06em;
+}
+
+.reactor-fix-timer-value {
+  font-size: 22px;
+  font-weight: 900;
+}

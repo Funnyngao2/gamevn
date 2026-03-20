@@ -1,7 +1,7 @@
 // Game constants - mirrors settings.py
 export const WIDTH = 1280
 export const HEIGHT = 640
-export const FPS = 60
+export const FPS = 120
 export const TILESIZE = 32
 export const PLAYER_SPEED = 400
 export const NO_OF_MISSIONS = 6

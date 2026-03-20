@@ -6,9 +6,23 @@ const MAP_W_DEFAULT = 6720
 const MAP_H_DEFAULT = 3840
 
 function worldToMap(wx, wy, w, h, mapW, mapH) {
-  const W = mapW ?? MAP_W_DEFAULT
-  const H = mapH ?? MAP_H_DEFAULT
-  return { x: (wx / W) * w, y: (wy / H) * h }
+  const W = Number(mapW ?? MAP_W_DEFAULT)
+  const H = Number(mapH ?? MAP_H_DEFAULT)
+  const X = Number(wx)
+  const Y = Number(wy)
+
+  if (!isFinite(W) || !isFinite(H) || !isFinite(X) || !isFinite(Y)) {
+    return { x: w / 2, y: h / 2 }
+  }
+
+  const nx = (X / W) * w
+  const ny = (Y / H) * h
+
+  // Clamp để tránh trường hợp điểm bị lệch ra ngoài viewBox (do scale/coord mismatch)
+  return {
+    x: Math.max(0, Math.min(w, nx)),
+    y: Math.max(0, Math.min(h, ny)),
+  }
 }
 
 export default function MinimapOverlay({ gameRef }) {
@@ -40,7 +54,7 @@ export default function MinimapOverlay({ gameRef }) {
 
   if (!mapData) return null
 
-  const { localPlayer, tasks, isImposter, mapW, mapH } = mapData
+  const { localPlayer, tasks, isImposter, mapW, mapH, sabotage } = mapData
   const worldW = mapW ?? MAP_W_DEFAULT
   const worldH = mapH ?? MAP_H_DEFAULT
 
@@ -75,6 +89,35 @@ export default function MinimapOverlay({ gameRef }) {
           viewBox={`0 0 ${W} ${H}`}
           preserveAspectRatio="none"
         >
+          {/* Sabotage Markers (Reactor / Lights) */}
+          {sabotage?.reactor && sabotage.reactorFixPoint && (() => {
+            const p = worldToMap(sabotage.reactorFixPoint.x, sabotage.reactorFixPoint.y, W, H, worldW, worldH)
+            return (
+              <motion.g key="sab-reac"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}>
+                <circle cx={p.x} cy={p.y} r={expanded ? 12 : 8} fill="#ef4444" opacity={0.2} />
+                <circle cx={p.x} cy={p.y} r={expanded ? 8 : 5} fill="#ef4444" stroke="white" strokeWidth={1} />
+                <text x={p.x} y={p.y + (expanded ? 18 : 12)} textAnchor="middle" fontSize={expanded ? 10 : 7} fill="#ef4444" fontWeight="bold">⚠ REACTOR</text>
+              </motion.g>
+            )
+          })()}
+
+          {sabotage?.lights && sabotage.lightsFixPoint && (() => {
+            const p = worldToMap(sabotage.lightsFixPoint.x, sabotage.lightsFixPoint.y, W, H, worldW, worldH)
+            return (
+              <motion.g key="sab-lights"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}>
+                <circle cx={p.x} cy={p.y} r={expanded ? 10 : 7} fill="#f59e0b" opacity={0.2} />
+                <circle cx={p.x} cy={p.y} r={expanded ? 7 : 4} fill="#f59e0b" stroke="white" strokeWidth={1} />
+                <text x={p.x} y={p.y + (expanded ? 18 : 12)} textAnchor="middle" fontSize={expanded ? 10 : 7} fill="#f59e0b" fontWeight="bold">⚠ LIGHTS</text>
+              </motion.g>
+            )
+          })()}
+
           {/* Task hotspots (crewmate only) — glow + pin shape */}
           {!isImposter && tasks?.map((t, i) => {
             const p = worldToMap(t.x, t.y, W, H, worldW, worldH)

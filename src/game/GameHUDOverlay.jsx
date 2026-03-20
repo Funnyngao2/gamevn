@@ -67,29 +67,35 @@ export default function GameHUDOverlay({ gameRef }) {
       : 'WASD: Di chuyển | F: Làm nhiệm vụ | E: Họp khẩn | R: Báo xác'
     : null
 
+  const alertKind = gameAlert?.type || 'info'
+  const alertTitle =
+    { danger: 'Phá hoại', warning: 'Phá hoại', success: 'Đã xử lý', info: 'Thông báo' }[alertKind] || 'Thông báo'
+
   return (
     <div className="game-hud-root">
       {/* Alerts - Top Center */}
-      <AnimatePresence>
+      <div className="game-hud-alert-anchor">
         {gameAlert && (
-          <motion.div
-            initial={{ y: -100, opacity: 0, x: '-50%' }}
-            animate={{ y: 0, opacity: 1, x: '-50%' }}
-            exit={{ y: -100, opacity: 0, x: '-50%' }}
-            className={`game-hud-alert alert-${gameAlert.type || 'info'}`}
-          >
-            <span className="game-hud-alert-title">Thông báo</span>
-            <p className="game-hud-alert-text">{gameAlert.text}</p>
-          </motion.div>
+          <div className={`game-hud-alert alert-${alertKind} game-hud-alert--visible`}>
+            <span className="game-hud-alert-title">{alertTitle}</span>
+            <p className="game-hud-alert-text">
+              {String(gameAlert.text || '').split('\n').map((line, i, arr) => (
+                <span key={i} className={i === 0 ? 'game-hud-alert-line game-hud-alert-line--head' : 'game-hud-alert-line'}>
+                  {line}
+                  {i < arr.length - 1 ? <br /> : null}
+                </span>
+              ))}
+            </p>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
 
       {/* Task List & Progress - Top Left */}
       {hud && (
         <div className="game-hud-panel-left">
           <div className="game-hud-task-header">
             <span className="game-hud-task-label">Tiến độ chung</span>
-            <span className="game-hud-task-value">{done}/{total}</span>
+            <span className="game-hud-task-value">{Math.round(progress)}%</span>
           </div>
           
           <div className="game-hud-progress-track">
@@ -133,18 +139,13 @@ export default function GameHUDOverlay({ gameRef }) {
       )}
 
       {/* Interaction Prompt - Bottom Middle */}
-      <AnimatePresence>
+      <div className="game-hud-prompt-anchor">
         {gamePrompt && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: 20, x: '-50%' }}
-            className="game-hud-prompt"
-          >
+          <div className="game-hud-prompt game-hud-prompt--visible">
             <span className="game-hud-prompt-text">{gamePrompt.text}</span>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
 
       {/* Controls Hint - Bottom Left */}
       {controlsHint && (

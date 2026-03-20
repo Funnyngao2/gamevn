@@ -75,16 +75,50 @@ export default function MenuView() {
   const [phase, setPhase] = useState('loading')
   const [loadPct, setLoadPct] = useState(0)
   const [tipIdx, setTipIdx] = useState(0)
+  const videoRef = useRef(null)
 
   useEffect(() => {
+    // Preload video
+    const video = document.createElement('video')
+    video.src = 'assets/videos/videobackgroud.mp4'
+    video.preload = 'auto'
+    videoRef.current = video
+
+    let videoLoaded = false
     let pct = 0
+
+    const checkComplete = () => {
+      if (videoLoaded && pct >= 100) {
+        setLoadPct(100)
+        setTimeout(() => setPhase('menu'), 500)
+      }
+    }
+
+    video.addEventListener('canplaythrough', () => {
+      videoLoaded = true
+      checkComplete()
+    })
+
+    video.load()
+
     const iv = setInterval(() => {
       pct += Math.random() * 9 + 3
-      if (pct >= 100) { setLoadPct(100); clearInterval(iv); setTimeout(() => setPhase('menu'), 500) }
-      else setLoadPct(Math.floor(pct))
+      if (pct >= 100) {
+        pct = 100
+        clearInterval(iv)
+        checkComplete()
+      } else {
+        setLoadPct(Math.floor(pct))
+      }
     }, 80)
+
     const tipIv = setInterval(() => setTipIdx(i => (i + 1) % TIPS.length), 2500)
-    return () => { clearInterval(iv); clearInterval(tipIv) }
+    
+    return () => {
+      clearInterval(iv)
+      clearInterval(tipIv)
+      video.remove()
+    }
   }, [])
 
   return (
@@ -160,7 +194,17 @@ function CharacterSelect() {
   return (
     <motion.div className="menu-view-container"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <SceneBg />
+      {/* Video background */}
+      <video
+        autoPlay loop muted playsInline
+        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
+        style={{ opacity: 0.45 }}
+      >
+        <source src="assets/videos/videobackgroud.mp4" type="video/mp4" />
+      </video>
+      {/* Dark overlay để text dễ đọc */}
+      <div className="absolute inset-0 z-0 pointer-events-none"
+        style={{ background: 'linear-gradient(135deg,#02061799 0%,#080d1acc 40%,#050b18bb 100%)' }} />
 
       <div className="absolute inset-0 pointer-events-none transition-all duration-700"
         style={{ background: `radial-gradient(ellipse 70% 50% at 50% 60%, ${char.hex}18 0%, transparent 70%)` }} />

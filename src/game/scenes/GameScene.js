@@ -3,6 +3,7 @@ import Phaser from 'phaser'
 import { Player } from '../../entities/Player.js'
 import { safePlay } from '../../utils/safePlay.js'
 import { NO_OF_MISSIONS, KILL_COOLDOWN, MEETING_COOLDOWN, REACTOR_CRITICAL_TIME, VENT_COOLDOWN, SABOTAGE_COOLDOWN } from '../../config.js'
+import { resolveTaskKind } from '../tasks/taskKindResolve.js'
 
 const INTERACT_RANGE = 80
 
@@ -19,6 +20,7 @@ export class GameScene extends Phaser.Scene {
     this.roomId          = data.roomId        || reg?.get('roomId')      || null
     this._existingSocket = data.socket        || reg?.get('socket')      || null
     this._onGameEnd      = data.onGameEnd     || reg?.get('onGameEnd')   || null
+    this._lastNearTaskId = null
   }
 
   create() {
@@ -36,7 +38,8 @@ export class GameScene extends Phaser.Scene {
     // --- PARSE OBJECT LAYER ---
     this.ventZones = []
     this.wallGroup = this.physics.add.staticGroup()
-    const obstaclesLayer = this.map.getObjectLayer('Obstacles')
+    // Support both `Obstacles` and `obstacles` layer names from Tiled
+    const obstaclesLayer = this.map.getObjectLayer('Obstacles') || this.map.getObjectLayer('obstacles')
     this.emergencyBtnPos = { x: 3320, y: 716 }  // from map emerg_btn object center
     if (obstaclesLayer) {
       obstaclesLayer.objects.forEach(obj => {
@@ -52,34 +55,74 @@ export class GameScene extends Phaser.Scene {
       })
     }
 
-    // --- TASKS FROM MAP: ưu tiên layer "Tasks", không có thì lấy từ "Obstacles" (object không phải wall/vent/spawn) ---
+    // --- TASKS FROM MAP: chỉ lấy từ layer "Tasks" ---
     this.tasksFromMap = []
-    const isObstacleOrSpawn = (name) => {
-      if (!name) return true
-      if (['walls', 'wall', 'tables', 'vent', 'emerg_btn', 'emergency_btn'].includes(String(name).toLowerCase())) return true
-      if (/^player\d*$/i.test(String(name))) return true
+    const isEmergencyOrNonTaskNameInTasksLayer = (name) => {
+      const n = String(name || '').trim().toLowerCase()
+      if (!n) return false
+      // Nút khẩn cấp đôi khi bị đặt nhầm trong layer "Tasks"
+      if (['walls', 'wall', 'tables', 'vent', 'emerg_btn', 'emergency_btn'].includes(n)) return true
+      // Hỗ trợ trường hợp có suffix / index: emerg_btn1, emergency_btn_2,...
+      if (/^emerg(?:ency)?(?:_|-)?btn\d*$/i.test(n)) return true
+      if (/^player\d*$/i.test(n)) return true
       return false
     }
     let taskObjects = []
     const tasksOnlyLayer = this.map.getObjectLayer('Tasks') || this.map.getObjectLayer('tasks')
     if (tasksOnlyLayer && tasksOnlyLayer.objects && tasksOnlyLayer.objects.length) {
-      taskObjects = tasksOnlyLayer.objects
-    } else if (obstaclesLayer && obstaclesLayer.objects) {
-      taskObjects = obstaclesLayer.objects.filter(obj => obj.x != null && obj.y != null && !isObstacleOrSpawn(obj.name))
+      taskObjects = tasksOnlyLayer.objects.filter(obj => obj.x != null && obj.y != null && !isEmergencyOrNonTaskNameInTasksLayer(obj.name))
     }
     taskObjects.forEach((obj, i) => {
       const props = (obj.properties || []).reduce((acc, p) => { acc[p.name] = p.value; return acc }, {})
-      const id = props.id || obj.name || `task_${obj.id ?? i}`
+      const id = props.id || (obj.id != null ? `task_${obj.id}` : null) || obj.name || `task_${i}`
       let kind = props.kind
       if (!kind && obj.name && obj.name.includes('_')) kind = obj.name.split('_').slice(0, -1).join('_')
       if (!kind) kind = 'task'
       const label = props.label || obj.name || id
       const x = Math.round((obj.x || 0) + (obj.width || 0) / 2)
       const y = Math.round((obj.y || 0) + (obj.height || 0) / 2)
-      this.tasksFromMap.push({ id: String(id), kind: String(kind), label: String(label), x, y })
+      this.tasksFromMap.push({ id: String(id), kind: resolveTaskKind(String(kind)), label: String(label), x, y })
     })
+
+    // --- DYNAMIC SABOTAGE FIX POINTS FROM MAP ---
+    // Always read sabotage fix points directly from the object layer, not from `tasksFromMap`.
+    // This prevents cases where `tasksFromMap` is built from layer `Tasks` only.
+    const normalize = (v) => String(v).trim().toLowerCase().replace(/[^a-z0-9_]/g, '')
+    const findPointFromObstacles = (key) => {
+      const objs = obstaclesLayer?.objects || []
+      const normKey = normalize(key)
+
+      for (const obj of objs) {
+        const props = (obj.properties || []).reduce((acc, p) => { acc[p.name] = p.value; return acc }, {})
+        const candidates = [props.id, obj.name, obj.id].filter(v => v != null)
+        if (!candidates.some(v => normalize(v) === normKey)) continue
+
+        return {
+          x: Math.round((obj.x || 0) + (obj.width || 0) / 2),
+          y: Math.round((obj.y || 0) + (obj.height || 0) / 2),
+        }
+      }
+      return null
+    }
+
+    // Chỉ dùng reactor_a — 1 điểm duy nhất
+    const reactorA = findPointFromObstacles('reactor_a')
+    if (reactorA) {
+      this._reactorFixPoints = [reactorA]
+    } else {
+      const a2 = this.tasksFromMap.find(t => normalize(t.id) === normalize('reactor_a'))
+      if (a2) this._reactorFixPoints = [{ x: a2.x, y: a2.y }]
+    }
+
+    const lightsFix = findPointFromObstacles('lights_fix')
+    if (lightsFix) this._lightsFixPoint = { x: lightsFix.x, y: lightsFix.y }
+    else {
+      const lf = this.tasksFromMap.find(t => normalize(t.id) === normalize('lights_fix'))
+      if (lf) this._lightsFixPoint = { x: lf.x, y: lf.y }
+    }
+
     if (this.tasksFromMap.length) {
-      console.log('[Tasks] Danh sách nhiệm vụ từ map (vị trí x,y):', this.tasksFromMap.map(t => ({ id: t.id, kind: t.kind, label: t.label, x: t.x, y: t.y })))
+      // console.log('[Tasks] Danh sách nhiệm vụ từ map (vị trí x,y):', this.tasksFromMap.map(t => ({ id: t.id, kind: t.kind, label: t.label, x: t.x, y: t.y })))
     }
 
     // --- PLAYER ---
@@ -128,13 +171,9 @@ export class GameScene extends Phaser.Scene {
     this.reactorStartTime = 0
     this.sabotageLights = false
     this.sabotageCooldownStart = 0
-    // Fix points for crew: reactor fix at center of map, lights fix at electrical room
-    this._reactorFixPoints = [
-      { x: 3320, y: 1200 },  // reactor fix point A
-      { x: 3600, y: 1200 },  // reactor fix point B
-    ]
-    this._lightsFixPoint = { x: 1400, y: 1600 }
-    this._reactorFixed = { A: false, B: false }
+    // Fix points already parsed from map above — do NOT reset here
+    if (!this._reactorFixPoints) this._reactorFixPoints = []
+    if (!this._lightsFixPoint) this._lightsFixPoint = { x: 1400, y: 1600 } // Fallback default
     // Impostor must wait full cooldown before first kill
     this.killCooldownStart = 0  // will be set properly in _startKillCooldown
     this._killReady = false
@@ -146,20 +185,6 @@ export class GameScene extends Phaser.Scene {
     this.playerId = 'local'
     this.startTime = Date.now() // Dùng Date.now() để đồng bộ tuyệt đối
     this._gameFullyStarted = false // Cờ chặn kiểm tra thắng thua
-// Sau 3 giây mới cho phép kiểm tra thắng thua
-this.time.delayedCall(3000, () => {
-  this._gameFullyStarted = true
-  console.log("🚀 Game logic fully active")
-  // In ra vị trí nhiệm vụ từ map (và nhiệm vụ được gán) để dễ kiểm tra
-  if (this.tasksFromMap && this.tasksFromMap.length) {
-    console.log('[Tasks] Vị trí nhiệm vụ từ map (x, y):', this.tasksFromMap.map(t => ({ id: t.id, kind: t.kind, x: t.x, y: t.y })))
-  } else {
-    console.log('[Tasks] Không có nhiệm vụ từ map (kiểm tra layer "Tasks" trong Tiled)')
-  }
-  if (this.taskList && this.taskList.length) {
-    console.log('[Tasks] Nhiệm vụ được gán cho bạn:', this.taskList.map(t => ({ id: t.id, label: t.label, x: t.x, y: t.y })))
-  }
-})
 
 // --- HUD ---
 this._createHUD()
@@ -263,6 +288,12 @@ this._createHUD()
       })),
       tasks: this.taskList?.map(t => ({ x: t.x, y: t.y, label: t.label, done: t.done })) || [],
       isImposter: this.player.isImposter,
+      sabotage: {
+        reactor: this.sabotageReactor,
+        reactorFixPoint: this._reactorFixPoints?.[0] || null,
+        lights: this.sabotageLights,
+        lightsFixPoint: this._lightsFixPoint
+      },
     })
   }
 
@@ -289,7 +320,14 @@ this._createHUD()
     const fromMap = (this.tasksFromMap && this.tasksFromMap.length) ? this.tasksFromMap : null
     this.taskList = assigned.map(task => {
       const base = fromMap ? (fromMap.find(t => t.id === task.id) || task) : task
-      return { id: task.id, kind: base.kind, label: base.label, x: base.x, y: base.y, done: false }
+      return {
+        id: task.id,
+        kind: resolveTaskKind(base.kind),
+        label: base.label,
+        x: base.x,
+        y: base.y,
+        done: false,
+      }
     })
   }
 
@@ -299,10 +337,13 @@ this._createHUD()
     if (!task) return
     task.done = true
     this.missionsDone++
+    this._lastNearTaskId = null // Reset khi xong
     safePlay(this, 'task_complete')
     if (this.ws) this.ws.emit('taskDone', { taskId })
     this._refreshTaskMarkers()
     this._checkWinConditions()
+    this._updateInteractionPrompt()
+    this._updateHUD()
   }
 
   _updateHUD() {
@@ -358,7 +399,11 @@ this._createHUD()
           !t.done && Phaser.Math.Distance.Between(px, py, t.x, t.y) < INTERACT_RANGE)
         if (nearTask) {
           this.game.registry.get('onPrompt')?.(`[F] ${nearTask.label}`)
+          this._lastNearTaskId = nearTask.id
           return
+        } else if (this._lastNearTaskId) {
+          this.game.registry.get('onOpenTask')?.(null)
+          this._lastNearTaskId = null
         }
       }
       this.game.registry.get('onPrompt')?.(null)
@@ -379,6 +424,13 @@ this._createHUD()
       if (nearVent) prompt = '[V] Nhảy vào cống'
     }
 
+    // Báo xác ưu tiên cao hơn kill (cả impostor lẫn crewmate)
+    if (!prompt) {
+      const nearBody = this.corpses.getChildren().find(body =>
+        Phaser.Math.Distance.Between(px, py, body.x, body.y) < INTERACT_RANGE)
+      if (nearBody) prompt = '[R] Báo xác'
+    }
+
     if (this.player.isImposter && !prompt) {
       const targets = Object.values(this.remotePlayers).filter(p => !p.isImposter)
       const nearTarget = targets.find(p => p.alive &&
@@ -389,13 +441,12 @@ this._createHUD()
       }
     }
 
-    if (!this.player.isImposter && !prompt) {
-      if (this.sabotageReactor) {
-        const dA = Phaser.Math.Distance.Between(px, py, this._reactorFixPoints[0].x, this._reactorFixPoints[0].y)
-        const dB = Phaser.Math.Distance.Between(px, py, this._reactorFixPoints[1].x, this._reactorFixPoints[1].y)
-        if (dA < INTERACT_RANGE && !this._reactorFixed.A) prompt = '[F] Sửa lò phản ứng (Điểm A)'
-        else if (dB < INTERACT_RANGE && !this._reactorFixed.B) prompt = '[F] Sửa lò phản ứng (Điểm B)'
-      } else if (this.sabotageLights) {
+    if (!prompt) {
+      if (this.sabotageReactor && this._reactorFixPoints?.length >= 1) {
+        if (this._nearestReactorFixDist(px, py) < INTERACT_RANGE) {
+          prompt = '⚛ Đứng yên để sửa lò phản ứng (cần 2 người)'
+        }
+      } else if (this.sabotageLights && this._lightsFixPoint) {
         const d = Phaser.Math.Distance.Between(px, py, this._lightsFixPoint.x, this._lightsFixPoint.y)
         if (d < INTERACT_RANGE) prompt = '[F] Bật lại đèn'
       }
@@ -405,14 +456,17 @@ this._createHUD()
       const nearTask = this.taskList
         ? this.taskList.find(t => !t.done && Phaser.Math.Distance.Between(px, py, t.x, t.y) < INTERACT_RANGE)
         : null
-      if (nearTask) prompt = `[F] ${nearTask.label}`
-    }
-
-    if (!prompt) {
-      // Ưu tiên báo xác chết dựa trên sprite cái xác tĩnh dưới đất
-      const nearBody = this.corpses.getChildren().find(body => 
-        Phaser.Math.Distance.Between(px, py, body.x, body.y) < INTERACT_RANGE)
-      if (nearBody) prompt = '[R] Báo xác'
+      
+      if (nearTask) {
+        prompt = `[F] ${nearTask.label}`
+        this._lastNearTaskId = nearTask.id
+      } else {
+        // Nếu vừa rời khỏi vùng của task đang mở, tự động đóng lại
+        if (this._lastNearTaskId) {
+          this.game.registry.get('onOpenTask')?.(null)
+          this._lastNearTaskId = null
+        }
+      }
     }
 
     if (!prompt && !this.player.isImposter) {
@@ -490,115 +544,176 @@ this._createHUD()
     if (type === 'reactor') {
       this.sabotageReactor = true
       this.reactorStartTime = this.time.now
-      this._reactorFixed = { A: false, B: false }
-      this._showSabotageAlert('⚠ LÒ PHẢN ỨNG BỊ PHÁ!\nSửa tại 2 điểm trước khi hết giờ!', '#ff4444')
+      this._reactorProgress = 0
+      this._reactorFixers = 0
+      this._showSabotageAlert('⚠ LÒ PHẢN ỨNG BỊ PHÁ!\nĐến một trong hai điểm reactor — cần 2 người!', '#ff4444')
       if (this.ws) this.ws.emit('sabotage', { type: 'reactor' })
     } else if (type === 'lights') {
       this.sabotageLights = true
       this._applyLightsEffect(true)
       this._showSabotageAlert('⚠ ĐÈN BỊ TẮT!\nSửa tại phòng điện!', '#ffaa00')
       if (this.ws) this.ws.emit('sabotage', { type: 'lights' })
-      // Lights auto-fix after 30s if crew doesn't fix
-      this.time.delayedCall(30000, () => {
-        if (this.sabotageLights) this._fixSabotage('lights')
-      })
     }
   }
 
   _applyLightsEffect(on) {
-    if (on) {
-      // Dark overlay with small vision circle around player
-      if (!this._lightsOverlay) {
-        this._lightsOverlay = this.add.graphics().setScrollFactor(0).setDepth(15)
-      }
-    } else {
-      this._lightsOverlay?.destroy()
-      this._lightsOverlay = null
+    // Hiệu ứng tắt đèn được xử lý hoàn toàn bởi React overlay (LightsDarkOverlay)
+    // Impostor không bị ảnh hưởng
+    if (this.player?.isImposter) return
+    if (!on) {
+      this.game.registry.set('lightsDarkData', { active: false })
     }
+    // Khi on=true, _updateLightsOverlay() sẽ tự bridge tọa độ mỗi frame
+  }
+
+  _updateLightsFixOverlay() {
+    if (!this.game?.registry) return
+    // Impostor không fix lights, và không hiện popup sau khi đã toggle xong
+    if (!this.sabotageLights || !this._lightsFixPoint || this.player.isImposter || this._lightsToggled) {
+      if (this._lightsHoldStart) this._lightsHoldStart = null
+      this.game.registry.set('lightsFixData', { visible: false })
+      return
+    }
+
+    const px = this.player.x, py = this.player.y
+    const d = Phaser.Math.Distance.Between(px, py, this._lightsFixPoint.x, this._lightsFixPoint.y)
+    const nearLights = d < INTERACT_RANGE && this.player.alive
+
+    // Debug: log mỗi 2s để kiểm tra vị trí
+    if (!this._lightsDebugTick || this.time.now - this._lightsDebugTick > 2000) {
+      this._lightsDebugTick = this.time.now
+      console.log(`[Lights] player(${Math.round(px)},${Math.round(py)}) fixPoint(${this._lightsFixPoint.x},${this._lightsFixPoint.y}) dist=${Math.round(d)} near=${nearLights}`)
+    }
+
+    const HOLD = 1500
+    let progress = 0
+    if (nearLights && this._lightsHoldStart) {
+      progress = Math.min(1, (this.time.now - this._lightsHoldStart) / HOLD)
+    }
+
+    this.game.registry.set('lightsFixData', {
+      visible: nearLights,
+      nearLights,
+      toggled: this._lightsToggled || false,
+      progress,
+    })
   }
 
   _updateLightsOverlay() {
-    if (!this.sabotageLights || !this._lightsOverlay) return
-    const { width, height } = this.scale
-    this._lightsOverlay.clear()
-
-    // Player position in screen coords
+    if (!this.game?.registry) return
+    // Tắt overlay nếu không có sabotage, là impostor, hoặc đã toggle xong (chờ server confirm)
+    if (!this.sabotageLights || this.player?.isImposter || this._lightsToggled) {
+      this.game.registry.set('lightsDarkData', { active: false })
+      return
+    }
     const cam = this.cameras.main
-    const sx = this.player.x - cam.scrollX
-    const sy = this.player.y - cam.scrollY
-    const r = 120
+    // cam.midPoint là tâm camera thực tế (chính xác hơn scrollX/Y khi có lerp)
+    const scrollX = cam.midPoint.x - cam.width  / 2 / cam.zoom
+    const scrollY = cam.midPoint.y - cam.height / 2 / cam.zoom
+    const cx = (this.player.x - scrollX) * cam.zoom
+    const cy = (this.player.y - scrollY) * cam.zoom
 
-    // Draw full dark screen first
-    this._lightsOverlay.fillStyle(0x000000, 0.92)
-    this._lightsOverlay.fillRect(0, 0, width, height)
+    // Tính offset canvas so với viewport (Scale.FIT có thể tạo letterbox)
+    const canvas = this.game.canvas
+    const rect = canvas?.getBoundingClientRect()
+    const offsetX = rect ? rect.left : 0
+    const offsetY = rect ? rect.top  : 0
+    const scaleX  = rect ? rect.width  / (canvas.width  || 1) : 1
+    const scaleY  = rect ? rect.height / (canvas.height || 1) : 1
 
-    // Punch a "vision hole" by drawing concentric circles from outside in,
-    // getting progressively more transparent toward the center
-    const steps = 10
-    for (let i = 0; i < steps; i++) {
-      const ratio = i / steps                    // 0 = outermost, 1 = innermost
-      const alpha = 0.92 * (1 - ratio)           // dark at edge, transparent at center
-      const circleR = r * (1 - ratio / steps)    // shrinking radius
-      this._lightsOverlay.fillStyle(0x000000, alpha)
-      this._lightsOverlay.fillCircle(sx, sy, circleR)
-    }
-    // Clear the very center so player can see directly around them
-    this._lightsOverlay.fillStyle(0x000000, 0)
-    this._lightsOverlay.fillCircle(sx, sy, r * 0.35)
-  }
-
-  _fixSabotage(type) {
-    if (type === 'reactor') {
-      this.sabotageReactor = false
-      this._showSabotageAlert('✓ Lò phản ứng đã được sửa!', '#44ff88')
-    } else if (type === 'lights') {
-      this.sabotageLights = false
-      this._applyLightsEffect(false)
-      this._showSabotageAlert('✓ Đèn đã được bật lại!', '#44ff88')
-      if (this.ws) this.ws.emit('sabotageFixed', { type: 'lights' })
-    }
+    this.game.registry.set('lightsDarkData', {
+      active: true,
+      sx: offsetX + cx * scaleX,
+      sy: offsetY + cy * scaleY,
+    })
   }
 
   _showSabotageAlert(msg, color) {
-    // Chuyển đổi màu hex của Phaser sang kiểu mà React HUD hiểu (danger/info)
-    const type = (color === '#ff4444' || color === '#ff0000') ? 'danger' : 'info'
-    
-    // Gửi thông báo sang React HUD
+    const c = String(color || '').toLowerCase()
+    let type = 'info'
+    if (c === '#ff4444' || c === '#ff0000') type = 'danger'
+    else if (c === '#ffaa00' || c === '#f59e0b') type = 'warning'
+    else if (c === '#44ff88' || c === '#22c55e') type = 'success'
     this.game.registry.get('onAlert')?.(msg, type, 4000)
+  }
+
+  /** Khoảng cách tới điểm sửa reactor gần nhất (map có reactor_a + reactor_b). */
+  _nearestReactorFixDist(px, py) {
+    if (!this._reactorFixPoints?.length) return Infinity
+    return Math.min(
+      ...this._reactorFixPoints.map((pt) => Phaser.Math.Distance.Between(px, py, pt.x, pt.y))
+    )
   }
 
   _tryFixSabotage() {
     if (!this.player.alive) return false
     const px = this.player.x, py = this.player.y
 
-    if (this.sabotageReactor) {
-      // Check fix point A
-      const dA = Phaser.Math.Distance.Between(px, py, this._reactorFixPoints[0].x, this._reactorFixPoints[0].y)
-      if (dA < INTERACT_RANGE && !this._reactorFixed.A) {
-        this._reactorFixed.A = true
-        this._showSabotageAlert('✓ Điểm A đã sửa! Sửa điểm B!', '#ffff44')
-        if (this.ws) this.ws.emit('sabotageFixProgress', { type: 'reactor', point: 'A' })
-      }
-      // Check fix point B
-      const dB = Phaser.Math.Distance.Between(px, py, this._reactorFixPoints[1].x, this._reactorFixPoints[1].y)
-      if (dB < INTERACT_RANGE && !this._reactorFixed.B) {
-        this._reactorFixed.B = true
-        this._showSabotageAlert('✓ Điểm B đã sửa! Sửa điểm A!', '#ffff44')
-        if (this.ws) this.ws.emit('sabotageFixProgress', { type: 'reactor', point: 'B' })
-      }
-      // Return true if player was near a fix point
-      return dA < INTERACT_RANGE || dB < INTERACT_RANGE
+    if (this.sabotageReactor && this._reactorFixPoints?.length >= 1) {
+      if (this._nearestReactorFixDist(px, py) < INTERACT_RANGE) return true // reactorStand trong update loop
     }
 
     if (this.sabotageLights) {
+      if (this.player.isImposter) return false  // impostor không fix lights
       const d = Phaser.Math.Distance.Between(px, py, this._lightsFixPoint.x, this._lightsFixPoint.y)
       if (d < INTERACT_RANGE) {
-        if (this.ws) this.ws.emit('sabotageFixed', { type: 'lights' })
+        const HOLD = 1500
+        if (!this._lightsHoldStart) this._lightsHoldStart = this.time.now
+        if (this.time.now - this._lightsHoldStart >= HOLD) {
+          this._lightsToggled = true
+          this._lightsHoldStart = null
+          this._applyLightsEffect(false)  // tắt overlay ngay, không chờ server
+          if (this.ws) this.ws.emit('sabotageFixed', { type: 'lights' })
+        }
         return true
+      } else {
+        this._lightsHoldStart = null
       }
     }
 
     return false
+  }
+
+  _updateReactorFixOverlay() {
+    if (!this.game?.registry) return
+    if (!this.sabotageReactor || !this._reactorFixPoints?.length) {
+      if (this._reactorStandInterval) {
+        clearInterval(this._reactorStandInterval)
+        this._reactorStandInterval = null
+        if (this.ws) this.ws.emit('reactorLeave')
+      }
+      this.game.registry.set('reactorFixData', { visible: false })
+      return
+    }
+
+    const px = this.player.x, py = this.player.y
+    const d = this._nearestReactorFixDist(px, py)
+    const nearReactor = d < INTERACT_RANGE && this.player.alive
+    const secondsLeft = Math.max(0, Math.ceil((REACTOR_CRITICAL_TIME - (this.time.now - this.reactorStartTime)) / 1000))
+
+    if (nearReactor) {
+      if (!this._reactorStandInterval) {
+        // Emit ngay lập tức lần đầu
+        if (this.ws) this.ws.emit('reactorStand')
+        this._reactorStandInterval = setInterval(() => {
+          if (this.ws && this.sabotageReactor) this.ws.emit('reactorStand')
+        }, 200)
+      }
+    } else {
+      if (this._reactorStandInterval) {
+        clearInterval(this._reactorStandInterval)
+        this._reactorStandInterval = null
+        if (this.ws) this.ws.emit('reactorLeave')
+      }
+    }
+
+    this.game.registry.set('reactorFixData', {
+      visible: nearReactor,
+      nearReactor,
+      progress: this._reactorProgress || 0,
+      fixers: this._reactorFixers || 0,
+      secondsLeft,
+    })
   }
 
   _tryKill() {
@@ -663,7 +778,7 @@ this._createHUD()
 
   _tryEmergency() {
     if (!this.player.alive || this.player.inVent) return
-    if (this.player.isImposter) return  // impostor không được dùng nút khẩn cấp
+    if (this.player.isImposter) return
     if (this.time.now - this.meetingCooldownStart < MEETING_COOLDOWN) return
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.emergencyBtnPos.x, this.emergencyBtnPos.y)
     if (dist < INTERACT_RANGE) {
@@ -679,6 +794,14 @@ this._createHUD()
     this._meetingStartTime = this.time.now
     this.game.registry.set('meetingActive', true)
     this.game.registry.get('onPrompt')?.(null)
+
+    // Clear local sabotage effects when meeting starts
+    this.sabotageReactor = false
+    this.sabotageLights = false
+    this._applyLightsEffect(false)
+    this.game.registry.set('reactorFixData', { visible: false })
+    this.game.registry.set('lightsFixData', { visible: false })
+    this._updateHUD()
 
     // Xóa tất cả xác chết trên bản đồ khi cuộc họp bắt đầu
     if (this.corpses) this.corpses.clear(true, true)
@@ -741,6 +864,13 @@ this._createHUD()
   // --- GHOST SYSTEM ---
   _becomeGhost() {
     if (!this.player.alive) return  // already ghost
+    
+    // Đóng tất cả overlay đang mở khi chết
+    this.game.registry.get('onOpenTask')?.(null)
+    this.game.registry.set('reactorFixData', { visible: false })
+    this.game.registry.set('lightsFixData', { visible: false })
+    this._lastNearTaskId = null
+
     this.player.die()
     this.player.setAlpha(0.45)
     this.player.setTint(0x8888ff)
@@ -774,7 +904,7 @@ this._createHUD()
     const events = [
       'id', 'players', 'kill', 'meeting', 'reportFailed', 'meetingState', 'meetingResult',
       'gameover', 'returnToLobby', 'chat', 'vote', 'meetingChat',
-      'sabotage', 'sabotageFixed', 'sabotageFixProgress'
+      'sabotage', 'sabotageFixed', 'reactorProgress'
     ]
     events.forEach(evt => this.ws.off(evt))
   }
@@ -877,8 +1007,9 @@ this._createHUD()
     this.ws.on('meetingChat',   (d) => this.game.registry.get('onMeetingChat')?.(d))
     this.ws.on('sabotage',      (d) => this._receiveSabotage(d))
     this.ws.on('sabotageFixed', (d) => this._receiveSabotageFixed(d))
-    this.ws.on('sabotageFixProgress', (d) => {
-      if (d.type === 'reactor') this._reactorFixed[d.point] = true
+    this.ws.on('reactorProgress', ({ progress, fixers }) => {
+      this._reactorProgress = progress
+      this._reactorFixers = fixers
     })
     this.ws.on('taskDone', (d) => {
       this._totalMissionsDone = d.totalDone
@@ -896,24 +1027,39 @@ this._createHUD()
     if (type === 'reactor') {
       this.sabotageReactor = true
       this.reactorStartTime = this.time.now
-      this._reactorFixed = { A: false, B: false }
-      this._showSabotageAlert('⚠ LÒ PHẢN ỨNG BỊ PHÁ!\nSửa tại 2 điểm trước khi hết giờ!', '#ff4444')
+      this._reactorProgress = 0
+      this._reactorFixers = 0
+      this._showSabotageAlert('⚠ LÒ PHẢN ỨNG BỊ PHÁ!\nĐến một trong hai điểm reactor — cần 2 người!', '#ff4444')
     } else if (type === 'lights') {
       this.sabotageLights = true
+      this._lightsToggled = false
+      this._lightsHoldStart = null
       this._applyLightsEffect(true)
       this._showSabotageAlert('⚠ ĐÈN BỊ TẮT!\nSửa tại phòng điện!', '#ffaa00')
     }
+    this._updateHUD()
   }
 
   _receiveSabotageFixed({ type }) {
     if (type === 'reactor') {
       this.sabotageReactor = false
+      this._reactorProgress = 0
+      this._reactorFixers = 0
+      if (this._reactorStandInterval) {
+        clearInterval(this._reactorStandInterval)
+        this._reactorStandInterval = null
+      }
+      this.game.registry.set('reactorFixData', { visible: false })
       this._showSabotageAlert('✓ Lò phản ứng đã được sửa!', '#44ff88')
     } else if (type === 'lights') {
       this.sabotageLights = false
+      this._lightsToggled = false
+      this._lightsHoldStart = null
       this._applyLightsEffect(false)
       this._showSabotageAlert('✓ Đèn đã được bật lại!', '#44ff88')
+      this.game.registry.set('lightsFixData', { visible: false })
     }
+    this._updateHUD()
   }
 
   _handleKillMsg({ killerId, victimId }) {
@@ -1019,6 +1165,7 @@ this._createHUD()
         this._endGame(null)
       }
       this._updateInteractionPrompt()
+      this._updateReactorFixOverlay()
       if (Phaser.Input.Keyboard.JustDown(this.chatKey)) {
         this.game.registry.get('onChatToggle')?.()
       }
@@ -1045,6 +1192,8 @@ this._createHUD()
     this._updateHUD()
     this._updateInteractionPrompt()
     this._updateLightsOverlay()
+    this._updateReactorFixOverlay()
+    this._updateLightsFixOverlay()
     if (this._gameFullyStarted) this._checkWinConditions()
 
     if (this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.killKey)) this._tryKill()
@@ -1055,10 +1204,17 @@ this._createHUD()
     }
     if (Phaser.Input.Keyboard.JustDown(this.reportKey))    this._tryReport()
     if (Phaser.Input.Keyboard.JustDown(this.emergencyKey)) this._tryEmergency()
-    if (!this.player.isImposter && Phaser.Input.Keyboard.JustDown(this.taskKey)) {
-      // Sabotage fix takes priority — only open task if no sabotage was fixed
-      const fixedSabotage = this._tryFixSabotage()
-      if (!fixedSabotage) this._tryInteractTask()
+
+    // Hold F để fix sabotage (cả imposter lẫn crewmate)
+    if (this.taskKey.isDown && (this.sabotageReactor || this.sabotageLights)) {
+      this._tryFixSabotage()
+    } else if (!this.player.isImposter) {
+      if (Phaser.Input.Keyboard.JustDown(this.taskKey) && !this.sabotageReactor && !this.sabotageLights) {
+        this._tryInteractTask()
+      }
+    }
+    if (!this.taskKey.isDown && this.sabotageLights) {
+      this._lightsHoldStart = null
     }
     if (Phaser.Input.Keyboard.JustDown(this.chatKey)) {
       this.game.registry.get('onChatToggle')?.()

@@ -14,16 +14,32 @@ const SABOTAGE_COOLDOWN = 30000
 const MEETING_COOLDOWN = 20000
 const INTERACT_RANGE = 80
 const KILL_RANGE = 95
-const REACTOR_FIX_POINTS = {
-  A: { x: 3320, y: 1200 },
-  B: { x: 3600, y: 1200 },
-}
+const REACTOR_FIX_POINT = { x: 3320, y: 1200 }  // reactor_a only
 const LIGHTS_FIX_POINT = { x: 1400, y: 1600 }
 const EMERGENCY_BUTTON_POS = { x: 3320, y: 716 }
 const TASKS_PER_PLAYER = 6
 
 // Khi không đọc được Tasks từ map → dùng pool rỗng (không set cứng x,y vì không chính xác với map thật)
 const TASK_POOL_FALLBACK = []
+
+/** Đồng bộ với `taskRegistry.js` — kind hợp lệ cho mini-game React */
+const TASK_MINIGAME_KINDS_LIST = [
+  'fix_wiring', 'upload_data', 'empty_garbage', 'clear_asteroids', 'inspect_sample',
+  'fuel_engines', 'align_output', 'calibrate_distributor', 'unlock_manifolds',
+  'chart_course', 'stabilize_steering', 'prime_shields', 'picture_puzzle',
+]
+const TASK_KIND_ALIASES_SRV = {
+  fuel_engine: 'fuel_engines',
+  reboot_wifi: 'upload_data',
+  stabilize_nav: 'stabilize_steering',
+  scan_manifest: 'inspect_sample',
+  task: 'fix_wiring',
+}
+function normalizeTaskKind(kind) {
+  const raw = String(kind || 'task').trim()
+  const v = TASK_KIND_ALIASES_SRV[raw] || raw
+  return TASK_MINIGAME_KINDS_LIST.includes(v) ? v : 'fix_wiring'
+}
 
 /** Object trong Obstacles có tên này (hoặc spawn player) thì không coi là nhiệm vụ. */
 const OBSTACLE_NAMES = new Set(['walls', 'wall', 'tables', 'vent', 'emerg_btn', 'emergency_btn'])
@@ -34,7 +50,19 @@ function isObstacleOrSpawn(name) {
   return false
 }
 
-/** Đọc danh sách nhiệm vụ từ map: ưu tiên layer "Tasks", không có thì lấy từ layer "Obstacles" (các object không phải wall/vent/spawn). */
+function isEmergencyOrNonTaskNameInTasksLayer(name) {
+  const n = String(name || '').trim().toLowerCase()
+  if (!n) return false
+  // Nút khẩn cấp đôi khi bị đặt nhầm trong layer "Tasks"
+  if (OBSTACLE_NAMES.has(n)) return true
+  // Hỗ trợ trường hợp có suffix / index: emerg_btn1, emergency_btn_2,...
+  if (/^emerg(?:ency)?(?:_|-)?btn\d*$/i.test(n)) return true
+  if (/^player\d*$/i.test(n)) return true
+  if (['walls', 'wall', 'tables', 'vent'].includes(n)) return true
+  return false
+}
+
+/** Đọc danh sách nhiệm vụ từ map: chỉ lấy từ layer "Tasks". */
 function loadTasksFromMap() {
   const mapPath = path.join(__dirname, '../public/assets/Maps/map.json')
   try {
@@ -42,27 +70,17 @@ function loadTasksFromMap() {
     const data = JSON.parse(raw)
     const layers = data.layers || []
     let taskLayer = layers.find(l => (l.type === 'objectgroup' || l.type === 'object group') && (l.name === 'Tasks' || l.name === 'tasks'))
-    let source = 'Tasks'
     if (!taskLayer || !Array.isArray(taskLayer.objects) || taskLayer.objects.length === 0) {
-      const obstaclesLayer = layers.find(l => (l.type === 'objectgroup' || l.type === 'object group') && (l.name === 'Obstacles' || l.name === 'obstacles'))
-      if (obstaclesLayer && Array.isArray(obstaclesLayer.objects)) {
-        const taskObjects = obstaclesLayer.objects.filter(obj => obj.x != null && obj.y != null && !isObstacleOrSpawn(obj.name))
-        if (taskObjects.length > 0) {
-          taskLayer = { objects: taskObjects }
-          source = 'Obstacles'
-        }
-      }
-    }
-    if (!taskLayer || !Array.isArray(taskLayer.objects)) {
-      // console.warn('[Tasks] Map không có layer "Tasks" và không có nhiệm vụ trong "Obstacles" — dùng pool rỗng.')
+      console.warn('[Tasks] Map không có object trong layer "Tasks" — dùng pool rỗng.')
       return TASK_POOL_FALLBACK
     }
 
     const tasks = taskLayer.objects
-      .filter(obj => obj.x != null && obj.y != null)
+      // Lọc sạch các object kiểu "nút khẩn cấp" nếu bị đặt nhầm trong layer Tasks
+      .filter(obj => obj.x != null && obj.y != null && !isEmergencyOrNonTaskNameInTasksLayer(obj.name))
       .map((obj, i) => {
         const props = (obj.properties || []).reduce((acc, p) => { acc[p.name] = p.value; return acc }, {})
-        const id = props.id || obj.name || `task_${obj.id ?? i}`
+        const id = props.id || (obj.id != null ? `task_${obj.id}` : null) || obj.name || `task_${i}`
         let kind = props.kind
         if (!kind && obj.name && obj.name.includes('_')) kind = obj.name.split('_').slice(0, -1).join('_')
         if (!kind) kind = 'task'
@@ -75,9 +93,10 @@ function loadTasksFromMap() {
       console.warn('[Tasks] Không có object nhiệm vụ nào — dùng pool rỗng.')
       return TASK_POOL_FALLBACK
     }
-    console.log(`[Tasks] Đã tải ${tasks.length} nhiệm vụ từ map (layer ${source}):`)
-    tasks.forEach((t, i) => console.log(`  ${i + 1}. id: ${t.id} | kind: ${t.kind} | label: "${t.label}" | x: ${t.x}, y: ${t.y}`))
-    return tasks
+    const normalized = tasks.map((t) => ({ ...t, kind: normalizeTaskKind(t.kind) }))
+    console.log(`[Tasks] Đã tải ${normalized.length} nhiệm vụ từ map (layer Tasks):`)
+    normalized.forEach((t, i) => console.log(`  ${i + 1}. id: ${t.id} | kind: ${t.kind} | label: "${t.label}" | x: ${t.x}, y: ${t.y}`))
+    return normalized
   } catch (e) {
     console.warn('[Tasks] Không đọc được map — dùng pool rỗng:', e.message)
     return TASK_POOL_FALLBACK
@@ -268,6 +287,16 @@ function startMeeting(roomId, reporterId, victimId) {
     }, MEETING_DISCUSSION_SEC * 1000),
   }
 
+  if (room.reactorFailTimer) {
+    clearTimeout(room.reactorFailTimer)
+    room.reactorFailTimer = null
+  }
+  const oldSabotage = room.activeSabotage
+  room.activeSabotage = null
+  if (oldSabotage) {
+    broadcastRoom(roomId, 'sabotageFixed', { type: oldSabotage })
+  }
+
   broadcastRoom(roomId, 'meeting', { reporterId, victimId })
   broadcastMeetingState(roomId)
   return true
@@ -346,6 +375,32 @@ function evaluateRoomWin(roomId) {
   // Impostor thắng theo parity, nhưng không kết thúc ngay lúc start game
   if (imp > 0 && imp >= crew && crewReduced) {
     finishGame(roomId, 'impostor')
+    return
+  }
+
+  // Crew thắng nếu hoàn thành hết nhiệm vụ
+  const crewSids = [...room.players].filter(sid => {
+    const pl = players.get(sid)
+    return pl && !isImpostorPlayer(pl)
+  })
+  const crewCount = crewSids.length
+  if (crewCount > 0) {
+    let totalDone = 0
+    if (room.tasksDone) {
+      // Chỉ tính task của những người hiện còn trong phòng (đã chết nhưng vẫn trong phòng vẫn tính)
+      crewSids.forEach(sid => {
+        const pl = players.get(sid)
+        const key = getPlayerProgressKey(pl, sid)
+        if (room.tasksDone.has(key)) {
+          totalDone += room.tasksDone.get(key).size
+        }
+      })
+    }
+    const tasksPerPlayer = Math.min(TASKS_PER_PLAYER, TASK_POOL.length)
+    const totalNeeded = crewCount * tasksPerPlayer
+    if (totalNeeded > 0 && totalDone >= totalNeeded) {
+      finishGame(roomId, 'crew')
+    }
   }
 }
 
@@ -893,7 +948,7 @@ io.on('connection', (socket) => {
     const p = players.get(socket.id); if (!p?.roomId) return
     const room = rooms.get(p.roomId); if (!room?.started) return
     if (!canUseEmergency(p)) return
-    if (distance(p.state, EMERGENCY_BUTTON_POS) > INTERACT_RANGE + 20) return
+    if (distance(p.state, EMERGENCY_BUTTON_POS) > 150) return
     const now = Date.now()
     if (now - (room.lastMeetingAt || 0) < MEETING_COOLDOWN) return
     room.lastMeetingAt = now
@@ -1008,7 +1063,8 @@ io.on('connection', (socket) => {
       if (!pl) return false
       return !isImpostorPlayer(pl)
     }).length
-    const totalNeeded = crewCount * TASKS_PER_PLAYER
+    const tasksAssignedPerPlayer = Math.min(TASKS_PER_PLAYER, TASK_POOL.length)
+    const totalNeeded = crewCount * tasksAssignedPerPlayer
 
     broadcastRoom(p.roomId, 'taskDone', { playerId: socket.id, taskId, totalDone, totalNeeded })
 
@@ -1022,6 +1078,7 @@ io.on('connection', (socket) => {
     const p = players.get(socket.id); if (!p?.roomId) return
     const room = rooms.get(p.roomId); if (!room?.started) return
     if (!isAliveState(p) || !isImpostorPlayer(p)) return
+    if (room.meeting && !room.meeting.ended) return
     if (Date.now() - (p.lastSabotageAt || 0) < SABOTAGE_COOLDOWN) return
     if (room.activeSabotage) return
 
@@ -1029,7 +1086,9 @@ io.on('connection', (socket) => {
     room.activeSabotage = type
 
     if (type === 'reactor') {
-      room.reactorFixed = { A: false, B: false }
+      room.reactorProgress = 0
+      room.reactorFixers = new Set()
+      room.reactorFixerProgress = {}
       if (room.reactorFailTimer) clearTimeout(room.reactorFailTimer)
       room.reactorFailTimer = setTimeout(() => {
         const activeRoom = rooms.get(p.roomId)
@@ -1041,49 +1100,68 @@ io.on('connection', (socket) => {
     socket.emit('sabotage', { type })
   })
 
+  // Client gửi ~200ms khi đứng gần reactor_a hoặc reactor_b (client lấy tọa độ từ map)
+  socket.on('reactorStand', () => {
+    const p = players.get(socket.id); if (!p?.roomId) return
+    const room = rooms.get(p.roomId)
+    if (!room?.started || room.activeSabotage !== 'reactor') return
+    if (!isAliveState(p)) return
+
+    if (!room.reactorFixers) room.reactorFixers = new Set()
+    if (!room.reactorFixerProgress) room.reactorFixerProgress = {}
+
+    const now = Date.now()
+    const prev = room.reactorFixerProgress[socket.id]
+    const last = prev?.lastTick || (now - 200)  // assume 200ms if first tick
+    const delta = Math.min(now - last, 500)
+
+    room.reactorFixerProgress[socket.id] = {
+      lastTick: now,
+      accumulated: (room.reactorFixerProgress[socket.id]?.accumulated || 0) + delta,
+    }
+    room.reactorFixers.add(socket.id)
+
+    // Each person needs 2000ms = 50% contribution
+    // Progress = sum of min(accumulated/2000, 0.5) per fixer * 100
+    let total = 0
+    for (const [sid, data] of Object.entries(room.reactorFixerProgress)) {
+      total += Math.min(data.accumulated / 2000, 0.5)
+    }
+    const progress = Math.min(Math.round(total * 100), 100)
+
+    room.reactorProgress = progress
+    broadcastRoom(p.roomId, 'reactorProgress', { progress, fixers: room.reactorFixers.size })
+
+    if (progress >= 100) {
+      if (room.reactorFailTimer) { clearTimeout(room.reactorFailTimer); room.reactorFailTimer = null }
+      room.activeSabotage = null
+      room.reactorProgress = 0
+      room.reactorFixers = new Set()
+      room.reactorFixerProgress = {}
+      broadcastRoom(p.roomId, 'sabotageFixed', { type: 'reactor' })
+      room.players.forEach(sid => players.get(sid)?.socket.emit('sabotageFixed', { type: 'reactor' }))
+    }
+  })
+
+  // Client sends this when leaving the reactor zone
+  socket.on('reactorLeave', () => {
+    const p = players.get(socket.id); if (!p?.roomId) return
+    const room = rooms.get(p.roomId); if (!room) return
+    if (room.reactorFixers) room.reactorFixers.delete(socket.id)
+    if (room.reactorFixerProgress) delete room.reactorFixerProgress[socket.id]
+  })
+
   socket.on('sabotageFixed', ({ type }) => {
     const p = players.get(socket.id); if (!p?.roomId) return
     const room = rooms.get(p.roomId)
-    if (!room?.started || !isAliveState(p) || isImpostorPlayer(p)) return
+    if (!room?.started || !isAliveState(p)) return
 
     if (type === 'lights') {
       if (room.activeSabotage !== 'lights') return
-      if (distance(p.state, LIGHTS_FIX_POINT) > INTERACT_RANGE + 20) return
+      // Position check skipped — client already validates proximity to lights_fix
       room.activeSabotage = null
-    } else if (type === 'reactor') {
-      // Ignore direct client reactor fix; reactor is completed only via validated fix points.
-      return
-    } else {
-      return
-    }
-
-    broadcastRoom(p.roomId, 'sabotageFixed', { type })
-    socket.emit('sabotageFixed', { type })
-  })
-
-  socket.on('sabotageFixProgress', ({ type, point }) => {
-    const p = players.get(socket.id); if (!p?.roomId) return
-    const room = rooms.get(p.roomId)
-    if (!room?.started || !isAliveState(p) || isImpostorPlayer(p)) return
-    if (type !== 'reactor' || room.activeSabotage !== 'reactor') return
-    if (!room.reactorFixed) room.reactorFixed = { A: false, B: false }
-    if (!['A', 'B'].includes(point)) return
-
-    const targetPoint = REACTOR_FIX_POINTS[point]
-    if (distance(p.state, targetPoint) > INTERACT_RANGE + 20) return
-    if (room.reactorFixed[point]) return
-
-    room.reactorFixed[point] = true
-    broadcastRoom(p.roomId, 'sabotageFixProgress', { type, point })
-
-    if (room.reactorFixed.A && room.reactorFixed.B) {
-      if (room.reactorFailTimer) {
-        clearTimeout(room.reactorFailTimer)
-        room.reactorFailTimer = null
-      }
-      room.activeSabotage = null
-      broadcastRoom(p.roomId, 'sabotageFixed', { type: 'reactor' })
-      room.players.forEach(sid => players.get(sid)?.socket.emit('sabotageFixed', { type: 'reactor' }))
+      broadcastRoom(p.roomId, 'sabotageFixed', { type })
+      socket.emit('sabotageFixed', { type })
     }
   })
 

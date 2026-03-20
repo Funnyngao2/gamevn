@@ -95,7 +95,11 @@ export default function LobbyView() {
   // Khi quay lại lobby từ gameover, xin lại state phòng để reset ready
   useEffect(() => {
     if (view === 'lobby' && prevView.current === 'gameover' && socket.current?.connected) {
-      socket.current.emit('getRoomState')
+      const { roomId } = useAppStore.getState()
+      if (roomId) {
+        // Thử rejoin phòng cũ trước, nếu không được thì getRoomState
+        socket.current.emit('joinRoom', { roomId })
+      }
     }
     prevView.current = view
   }, [view])

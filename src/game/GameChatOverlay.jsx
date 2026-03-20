@@ -191,7 +191,6 @@ export default function GameChatOverlay({ gameRef, socket, playerName, playerCol
                   >👻</button>
                 )}
               </div>
-              <button className="chat-close-btn" onClick={() => setOpen(false)} aria-label="Đóng">✕</button>
             </div>
 
             <div className="chat-messages">

@@ -1,0 +1,141 @@
+/* Khung chung cho mini-game tasks — đồng bộ phong cách Among Us / sci-fi HUD */
+.mini-root {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  padding: 28px 32px 32px;
+  min-width: 320px;
+  max-width: 440px;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.98) 0%, rgba(8, 12, 24, 0.99) 100%);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px);
+}
+
+.mini-head {
+  text-align: center;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mini-kicker {
+  margin: 0 0 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(34, 211, 238, 0.45);
+}
+
+.mini-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f1f5f9;
+}
+
+.mini-desc {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.mini-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mini-bar-track {
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mini-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #0891b2, #22d3ee);
+  transition: width 0.12s linear;
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.35);
+}
+
+.mini-bar-fill--ok {
+  background: linear-gradient(90deg, #15803d, #4ade80);
+  box-shadow: 0 0 16px rgba(74, 222, 128, 0.35);
+}
+
+.mini-bar-fill--warn {
+  background: linear-gradient(90deg, #b45309, #fbbf24);
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.3);
+}
+
+.mini-btn {
+  padding: 12px 18px;
+  border: none;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease, opacity 0.12s ease;
+}
+
+.mini-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.mini-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.mini-btn--primary {
+  background: linear-gradient(180deg, #0e7490, #0891b2);
+  color: #ecfeff;
+  box-shadow: 0 8px 24px rgba(8, 145, 178, 0.35);
+}
+
+.mini-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.mini-btn--accent {
+  background: linear-gradient(180deg, #047857, #10b981);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.3);
+}
+
+.mini-btn--danger {
+  background: linear-gradient(180deg, #b91c1c, #ef4444);
+  color: #fff;
+}
+
+.mini-btn-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.mini-panel {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.mini-hint {
+  margin: 0;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+}

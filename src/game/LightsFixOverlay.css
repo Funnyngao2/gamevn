@@ -1,0 +1,128 @@
+.lights-fix-root {
+  position: fixed;
+  bottom: 120px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  z-index: 30;
+  background: rgba(10, 8, 5, 0.93);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 16px;
+  padding: 18px 28px;
+  width: fit-content;
+  min-width: 260px;
+  max-width: 340px;
+  box-shadow: 0 0 40px rgba(245, 158, 11, 0.2), 0 8px 32px rgba(0,0,0,0.6);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.lights-fix-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.lights-fix-icon {
+  font-size: 18px;
+  animation: lights-blink 1s step-end infinite;
+}
+
+@keyframes lights-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+.lights-fix-title {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #f59e0b;
+  text-shadow: 0 0 12px rgba(245,158,11,0.5);
+}
+
+.lights-fix-subtitle {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  margin: 0;
+}
+
+/* Switch */
+.lights-fix-switch-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.lights-fix-switch {
+  width: 56px;
+  height: 28px;
+  border-radius: 14px;
+  padding: 3px;
+  position: relative;
+  transition: background 0.3s;
+}
+
+.lights-fix-switch.off {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.lights-fix-switch.on {
+  background: rgba(245, 158, 11, 0.4);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 12px rgba(245,158,11,0.4);
+}
+
+.lights-fix-switch-knob {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+
+.lights-fix-switch-label {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.6);
+  min-width: 32px;
+}
+
+.lights-fix-switch.on + .lights-fix-switch-label {
+  color: #fbbf24;
+}
+
+/* Progress bar */
+.lights-fix-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lights-fix-bar-bg {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.lights-fix-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+  min-width: 0;
+}
+
+.lights-fix-bar-pct {
+  font-size: 10px;
+  color: rgba(255,255,255,0.4);
+  text-align: right;
+}

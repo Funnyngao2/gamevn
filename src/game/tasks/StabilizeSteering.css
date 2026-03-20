@@ -1,0 +1,124 @@
+.steering-root {
+  width: 400px;
+}
+
+.steering-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.radar-container {
+  position: relative;
+  background: #020617;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(34, 211, 238, 0.1);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.radar-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.radar-line-h {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(34, 211, 238, 0.15);
+}
+
+.radar-line-v {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(34, 211, 238, 0.15);
+}
+
+.radar-circle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(34, 211, 238, 0.1);
+  border-radius: 50%;
+}
+
+.radar-circle-1 { width: 33%; height: 33%; }
+.radar-circle-2 { width: 66%; height: 66%; }
+
+.radar-target {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  pointer-events: none;
+  transition: all 0.3s;
+}
+
+.radar-target--active {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  box-shadow: 0 0 20px rgba(74, 222, 128, 0.2);
+  border-style: solid;
+}
+
+.radar-crosshair {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+}
+
+.crosshair-line-h, .crosshair-line-v {
+  position: absolute;
+  background: #f43f5e;
+  box-shadow: 0 0 8px rgba(244, 63, 94, 0.6);
+}
+
+.crosshair-line-h { top: 15px; left: 0; right: 0; height: 2px; }
+.crosshair-line-v { left: 15px; top: 0; bottom: 0; width: 2px; }
+
+.radar-indicator {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.indicator-dot {
+  position: absolute;
+  inset: 6px;
+  background: #22d3ee;
+  border-radius: 50%;
+  box-shadow: 0 0 12px #22d3ee;
+}
+
+.indicator-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid #22d3ee;
+  border-radius: 50%;
+  opacity: 0.4;
+  animation: radar-ping 1.5s infinite;
+}
+
+.radar-progress-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+@keyframes radar-ping {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(1.8); opacity: 0; }
+}

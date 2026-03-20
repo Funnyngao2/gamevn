@@ -224,25 +224,26 @@ function CharacterSelect() {
         {/* SWIPER COLUMN */}
         <motion.div className="swiper-container-wrapper"
           initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.1 }}>
-          
+
           <button className="swiper-nav-btn prev" onClick={() => swiperRef.current?.slidePrev()}>‹</button>
           <button className="swiper-nav-btn next" onClick={() => swiperRef.current?.slideNext()}>›</button>
 
+          <div className="character-swiper-vignette">
           <Swiper
             onSwiper={s => { swiperRef.current = s }}
             onSlideChange={s => setActiveIdx(s.realIndex)}
             effect="coverflow" grabCursor centeredSlides 
             slideToClickedSlide={true}
-            slidesPerView={1.8}
+            slidesPerView={1.25}
             breakpoints={{
-              640: { slidesPerView: 2.2 },
-              1024: { slidesPerView: 2.5 }
+              640: { slidesPerView: 1.45 },
+              1024: { slidesPerView: 1.55 }
             }}
             loop={true} initialSlide={activeIdx} keyboard={{ enabled: true }}
-            coverflowEffect={{ rotate: 5, stretch: 0, depth: 150, modifier: 2, slideShadows: false }}
+            coverflowEffect={{ rotate: 5, stretch: 0, depth: 120, modifier: 1.35, slideShadows: false }}
             modules={[EffectCoverflow, Keyboard, Navigation]}
             className="character-swiper"
-            style={{ padding: '40px 0' }}
+            style={{ padding: '52px 56px' }}
           >
             {CHARACTERS.map((c) => (
               <SwiperSlide key={c.id}>
@@ -256,18 +257,31 @@ function CharacterSelect() {
                   return (
                     <div className={`char-card-slide ${isActive ? 'char-card-active' : ''}`}
                       style={slideVars}>
-                      <CharacterAvatar avatar={c.avatar} hex={c.hex} size={isActive ? 140 : 80} active={isActive} />
-                      <p style={{
-                        color: isActive ? c.hex : 'rgba(255,255,255,0.25)',
-                        fontWeight: 800, fontSize: isActive ? 16 : 10,
-                        letterSpacing: 2, textTransform: 'uppercase', marginTop: 15
-                      }}>{c.label}</p>
+                      <span className="char-card-border-run" aria-hidden>
+                        <span className="char-card-border-beam" />
+                      </span>
+                      <div className="char-card-stack">
+                        <CharacterAvatar
+                          className="char-carousel-avatar"
+                          avatar={c.avatar}
+                          hex={c.hex}
+                          size={isActive ? 140 : 80}
+                          active={isActive}
+                          softActiveGlow={isActive}
+                        />
+                        <p style={{
+                          color: isActive ? c.hex : 'rgba(255,255,255,0.25)',
+                          fontWeight: 800, fontSize: isActive ? 16 : 10,
+                          letterSpacing: 2, textTransform: 'uppercase', marginTop: 15
+                        }}>{c.label}</p>
+                      </div>
                     </div>
                   )
                 }}
               </SwiperSlide>
             ))}
           </Swiper>
+          </div>
         </motion.div>
 
         {/* INFO COLUMN */}
@@ -278,7 +292,7 @@ function CharacterSelect() {
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
               <div className="card-accent-bar" style={{ background: `linear-gradient(90deg, ${char.hex}, #8b5cf6)` }} />
               <div className="card-header">
-                <CharacterAvatar avatar={char.avatar} hex={char.hex} size={56} active />
+                <CharacterAvatar className="char-info-header-avatar" avatar={char.avatar} hex={char.hex} size={56} active />
                 <div>
                   <p style={{ color: char.hex, fontWeight: 900, fontSize: 20, letterSpacing: 0.5, margin: 0 }}>{char.label}</p>
                   <span style={{
@@ -340,13 +354,18 @@ function CharacterSelect() {
   )
 }
 
-function CharacterAvatar({ avatar, hex, size = 64, active = false }) {
+function CharacterAvatar({ avatar, hex, size = 64, active = false, className = '', softActiveGlow = false }) {
+  const boxShadow = active
+    ? softActiveGlow
+      ? `0 0 0 1px ${hex}35, 0 0 20px ${hex}45, 0 0 40px ${hex}22`
+      : `0 0 0 2px ${hex}40, 0 0 28px ${hex}88, 0 0 56px ${hex}44, 0 0 88px ${hex}18`
+    : 'none'
   return (
-    <div style={{
+    <div className={className} style={{
       width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
-      border: `2px solid ${active ? hex+'90' : hex+'35'}`,
-      boxShadow: active ? `0 0 18px ${hex}60, 0 0 36px ${hex}22` : 'none',
-      background: `${hex}15`, transition: 'all 0.3s',
+      border: `2px solid ${active ? hex + (softActiveGlow ? '75' : '95') : hex + '35'}`,
+      boxShadow,
+      background: `${hex}15`, transition: 'all 0.45s ease',
     }}>
       <img src={`assets/Images/avatar/${avatar}`} alt=""
         className="w-full h-full object-cover block" />

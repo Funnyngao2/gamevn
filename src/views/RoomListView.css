@@ -165,15 +165,173 @@
 
 .profile-card {
   flex-shrink: 0; /* Không bị co lại */
+  position: relative;
+  isolation: isolate;
   border-radius: 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: linear-gradient(160deg, var(--player-color-fade), rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--player-color-border);
+  backdrop-filter: blur(20px);
+  cursor: default;
+  transition:
+    box-shadow 0.4s ease,
+    border-color 0.35s ease,
+    transform 0.35s ease;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--player-hex) 18%, transparent),
+    0 0 12px 2px color-mix(in srgb, var(--player-hex) 14%, transparent),
+    0 4px 20px color-mix(in srgb, var(--player-hex) 10%, transparent),
+    inset 0 0 28px 10px color-mix(in srgb, var(--player-hex) 12%, transparent),
+    inset 0 0 52px 18px rgba(2, 6, 23, 0.45),
+    inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
+}
+
+.profile-card-inner {
+  position: relative;
+  z-index: 2;
   padding: 1rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.75rem;
-  background: linear-gradient(160deg, var(--player-color-fade), rgba(255, 255, 255, 0.03));
-  border: 1px solid var(--player-color-border);
-  backdrop-filter: blur(20px);
+}
+
+/* Viền khói sát mép trong (lớp phủ mờ + bóng inset thêm chiều sâu) */
+.profile-card::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: calc(1rem - 2px);
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 95% 55% at 50% 0%, color-mix(in srgb, var(--player-hex) 14%, transparent) 0%, transparent 58%),
+    radial-gradient(ellipse 70% 60% at 100% 80%, color-mix(in srgb, white 5%, transparent) 0%, transparent 45%);
+  opacity: 0.65;
+  box-shadow:
+    inset 0 0 22px 6px color-mix(in srgb, var(--player-hex) 10%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, white 6%, transparent);
+  transition: opacity 0.35s ease, box-shadow 0.35s ease;
+}
+
+.profile-card::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  z-index: -1;
+  border-radius: 1.1rem;
+  pointer-events: none;
+  background: radial-gradient(
+    70% 55% at 50% 0%,
+    color-mix(in srgb, var(--player-hex) 22%, transparent) 0%,
+    transparent 70%
+  );
+  filter: blur(14px);
+  opacity: 0.45;
+  transition: opacity 0.4s ease, filter 0.4s ease;
+}
+
+/* Đường line chạy quanh viền trong (chỉ hover) */
+.profile-card-border-run {
+  position: absolute;
+  inset: 5px;
+  z-index: 4;
+  border-radius: calc(1rem - 5px);
+  pointer-events: none;
+  box-sizing: border-box;
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  background: transparent;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.profile-card-border-beam {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: 50% 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg 330deg,
+    color-mix(in srgb, var(--player-hex) 40%, transparent) 338deg,
+    var(--player-hex) 346deg,
+    #ffffff 352deg,
+    var(--player-hex) 356deg,
+    transparent 360deg
+  );
+}
+
+.profile-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--player-hex) 48%, rgba(255, 255, 255, 0.12));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--player-hex) 30%, transparent),
+    0 0 20px 5px color-mix(in srgb, var(--player-hex) 24%, transparent),
+    0 0 38px 12px color-mix(in srgb, var(--player-hex) 12%, transparent),
+    0 10px 28px rgba(0, 0, 0, 0.36),
+    inset 0 0 32px 12px color-mix(in srgb, var(--player-hex) 14%, transparent),
+    inset 0 0 56px 20px rgba(2, 6, 23, 0.4),
+    inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+}
+
+.profile-card:hover::before {
+  opacity: 0.65;
+  filter: blur(18px);
+}
+
+.profile-card:hover::after {
+  opacity: 0.85;
+  box-shadow:
+    inset 0 0 28px 8px color-mix(in srgb, var(--player-hex) 14%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, white 9%, transparent);
+}
+
+.profile-card:hover .profile-card-border-run {
+  opacity: 1;
+}
+
+.profile-card:hover .profile-card-border-beam {
+  animation: profile-card-border-beam-rotate 2.1s linear infinite;
+}
+
+@keyframes profile-card-border-beam-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-card {
+    transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+
+  .profile-card:hover {
+    transform: none;
+  }
+
+  .profile-card::before {
+    transition: opacity 0.25s ease;
+  }
+
+  .profile-card:hover .profile-card-border-beam {
+    animation: none !important;
+    transform: rotate(0deg);
+  }
+
+  .profile-card:hover .profile-card-border-run {
+    opacity: 0.85;
+  }
 }
 
 .profile-avatar-wrapper {
@@ -285,14 +443,37 @@
   font-size: 0.875rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.45);
-  transition: all 0.2s;
+  transition:
+    color 0.2s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background 0.25s ease;
   margin-top: auto; /* Đẩy xuống dưới cùng của sidebar */
-  background: rgba(239, 68, 68, 0.07);
-  border: 1px solid rgba(239, 68, 68, 0.18);
+  background:
+    radial-gradient(ellipse 100% 72% at 50% 0%, rgba(252, 165, 165, 0.14) 0%, transparent 52%),
+    radial-gradient(ellipse 85% 55% at 100% 100%, rgba(239, 68, 68, 0.12) 0%, transparent 48%),
+    rgba(239, 68, 68, 0.07);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 26px 8px rgba(239, 68, 68, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -10px 22px rgba(127, 29, 29, 0.18);
 }
 
 .back-btn-sidebar:hover {
   color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.42);
+  background:
+    radial-gradient(ellipse 100% 72% at 50% 0%, rgba(252, 165, 165, 0.2) 0%, transparent 52%),
+    radial-gradient(ellipse 85% 55% at 100% 100%, rgba(239, 68, 68, 0.16) 0%, transparent 48%),
+    rgba(239, 68, 68, 0.09);
+  box-shadow:
+    inset 0 0 34px 12px rgba(239, 68, 68, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -12px 26px rgba(127, 29, 29, 0.24);
 }
 
 /* Toolbar */
@@ -309,19 +490,34 @@
   backdrop-filter: blur(12px);
 }
 
-.refresh-btn {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.75rem;
+.room-search-confirm-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
-  transition: color 0.2s;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border-radius: 0.75rem;
   flex-shrink: 0;
-  font-size: 1.125rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(6, 182, 212, 0.14);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.15);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.room-search-confirm-btn:hover {
+  background: rgba(6, 182, 212, 0.22);
+  border-color: rgba(6, 182, 212, 0.55);
+  box-shadow: 0 0 18px rgba(6, 182, 212, 0.28);
+  color: #fff;
+}
+
+.room-search-confirm-label {
+  white-space: nowrap;
 }
 
 .create-room-btn-toolbar {
@@ -394,26 +590,55 @@
     width: 100% !important;
     height: auto !important;
     flex-direction: row !important;
-    display: flex !important; /* Hiện lại trên mobile nhưng dạng hàng ngang */
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    column-gap: 0.5rem !important;
+    row-gap: 0.625rem !important;
+    flex-shrink: 0 !important;
+    margin-bottom: 0.5rem !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    display: flex !important;
   }
 
   .profile-card {
+    order: 1;
+    flex-direction: row !important;
+    width: 0 !important; /* co theo nội dung */
+    max-width: calc(100% - 5.5rem); /* chừa chỗ nút Quay lại cùng hàng */
+    padding: 0 !important;
+    justify-content: flex-start !important;
+    gap: 0 !important;
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--player-hex) 14%, transparent),
+      0 0 8px 1px color-mix(in srgb, var(--player-hex) 10%, transparent),
+      0 3px 14px color-mix(in srgb, var(--player-hex) 8%, transparent),
+      inset 0 0 20px 8px color-mix(in srgb, var(--player-hex) 10%, transparent),
+      inset 0 0 40px 14px rgba(2, 6, 23, 0.45),
+      inset 0 1px 0 color-mix(in srgb, white 8%, transparent) !important;
+  }
+
+  .profile-card::before {
+    inset: -3px !important;
+    filter: blur(10px) !important;
+    opacity: 0.32 !important;
+  }
+
+  .profile-card-inner {
     flex-direction: row !important;
     width: 100% !important;
     padding: 0.75rem !important;
     justify-content: flex-start !important;
     gap: 1rem !important;
+    align-items: center;
   }
 
-  .profile-card .w-full.space-y-2, 
-  .profile-card .w-full.h-px,
-  .profile-card div[style*="height: 2"] {
+  .profile-card-inner .w-full.space-y-2,
+  .profile-card-inner .w-full.h-px,
+  .profile-card-inner div[style*='height: 2'] {
     display: none !important; /* Ẩn các chi tiết thừa trên mobile */
   }
 
-  .profile-card{
-    width: 0 !important; /* Để profile card tự co lại theo nội dung */
-  }
   .profile-avatar-img-container {
     width: 3.5rem !important;
     height: 3.5rem !important;
@@ -424,13 +649,26 @@
   }
 
   .back-btn-sidebar {
+    order: 2;
     width: auto !important;
     padding: 0.5rem 1rem !important;
     margin-top: 0 !important;
+    margin-left: auto !important;
+    align-self: center !important;
+  }
+
+  .online-list-container {
+    order: 3;
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 4.5rem;
+    max-height: 8rem;
   }
 
   .main-layout-content {
     flex-direction: column !important;
+    gap: 0.75rem !important;
   }
 
 
@@ -439,6 +677,16 @@
   }
 
 
+
+  .room-search-confirm-btn {
+    padding: 0 0.5rem !important;
+    font-size: 0.65rem !important;
+    gap: 0.3rem !important;
+  }
+
+  .room-search-confirm-btn .room-search-confirm-label {
+    display: none;
+  }
 
   .create-room-btn-toolbar {
     position: relative !important; /* Trả về vị trí cũ */

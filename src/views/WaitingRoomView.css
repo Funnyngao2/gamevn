@@ -285,11 +285,7 @@
   }
 
   .start-status-text {
-    position: static !important;
-    transform: none !important;
-    opacity: 0.6 !important;
-    margin-bottom: 6px;
-    font-size: 9px !important;
+    display: none !important;
   }
 
   .btn-action-primary, .btn-leave-room {

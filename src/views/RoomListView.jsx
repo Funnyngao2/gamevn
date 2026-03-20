@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, X, RotateCw, Plus, Mic } from 'lucide-react'
+import { Search, X, Check, Plus, Mic } from 'lucide-react'
 import { getSocket } from '../socket.js'
 import { AVATAR_MAP } from './MenuView.jsx'
 import { COLOR_HEX, SceneBg, ChatLine, normalizeMsg } from './lobbyShared.jsx'
@@ -137,7 +137,8 @@ function LobbyChat({ socket, myUUID }) {
 }
 
 export default function RoomListView({ rooms, users, playerName, playerColor, socketId, error, onJoin, onCreate, onRefresh, onBack }) {
-  const [search,     setSearch]     = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [roomName,   setRoomName]   = useState(`${playerName}'s Room`)
   const [maxPlayers, setMaxPlayers] = useState(8)
   const [showCreate, setShowCreate] = useState(false)
@@ -154,7 +155,14 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
     '--player-color-shadow': `${hex}40`,
   }
 
-  const filtered = rooms.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()))
+  const applyRoomSearch = () => {
+    setSearchQuery(searchInput.trim())
+    onRefresh?.()
+  }
+
+  const filtered = rooms.filter(
+    r => !searchQuery || r.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
   const otherUsers = (users || []).filter(u => u.id !== socketId)
 
   return (
@@ -247,26 +255,31 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
         <motion.div initial={{ x:-30, opacity:0 }} animate={{ x:0, opacity:1 }} transition={{ delay:0.1 }}
           className="profile-sidebar flex flex-col gap-3" style={{ ...playerStyles }}>
           <div className="profile-card">
-            <div style={{ height:2, width:'70%', borderRadius:99, background:`linear-gradient(90deg,transparent,${hex},transparent)` }} />
-            <div className="profile-avatar-wrapper">
-              <div className="profile-avatar-img-container">
-                <img src={`assets/Images/avatar/${AVATAR_MAP[playerColor] || 'nam1.png'}`} alt=""
-                  className="w-full h-full object-cover" />
-              </div>
-              <div className="profile-avatar-badge">✦</div>
-            </div>
-            <div className="profile-info-text">
-              <p className="text-white font-extrabold text-base leading-tight">{playerName}</p>
-              <p className="text-xs capitalize font-semibold mt-0.5" style={{ color:hex }}>{playerColor}</p>
-            </div>
-            <div className="w-full h-px" style={{ background:'rgba(255,255,255,0.06)' }} />
-            <div className="w-full space-y-2">
-              {[['🏆','Cấp bậc','Tân binh'],['⚔','Thắng','0'],['💀','Thua','0'],['🎯','Tỉ lệ','—']].map(([icon,k,v]) => (
-                <div key={k} className="flex items-center justify-between">
-                  <span className="text-white/35 text-xs">{icon} {k}</span>
-                  <span className="text-white/75 text-xs font-bold">{v}</span>
+            <span className="profile-card-border-run" aria-hidden>
+              <span className="profile-card-border-beam" />
+            </span>
+            <div className="profile-card-inner">
+              <div style={{ height:2, width:'70%', borderRadius:99, background:`linear-gradient(90deg,transparent,${hex},transparent)` }} />
+              <div className="profile-avatar-wrapper">
+                <div className="profile-avatar-img-container">
+                  <img src={`assets/Images/avatar/${AVATAR_MAP[playerColor] || 'nam1.png'}`} alt=""
+                    className="w-full h-full object-cover" />
                 </div>
-              ))}
+                <div className="profile-avatar-badge">✦</div>
+              </div>
+              <div className="profile-info-text">
+                <p className="text-white font-extrabold text-base leading-tight">{playerName}</p>
+                <p className="text-xs capitalize font-semibold mt-0.5" style={{ color:hex }}>{playerColor}</p>
+              </div>
+              <div className="w-full h-px" style={{ background:'rgba(255,255,255,0.06)' }} />
+              <div className="w-full space-y-2">
+                {[['🏆','Cấp bậc','Tân binh'],['⚔','Thắng','0'],['💀','Thua','0'],['🎯','Tỉ lệ','—']].map(([icon,k,v]) => (
+                  <div key={k} className="flex items-center justify-between">
+                    <span className="text-white/35 text-xs">{icon} {k}</span>
+                    <span className="text-white/75 text-xs font-bold">{v}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -296,25 +309,33 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
 
         {/* Center: Room list + chat */}
         <motion.div initial={{ y:20, opacity:0 }} animate={{ y:0, opacity:1 }} transition={{ delay:0.15 }}
-          className="flex-1 flex flex-col gap-3 min-w-0" style={{ height:'100%', overflow:'hidden' }}>
+          className="flex-1 flex flex-col gap-3 min-w-0 min-h-0 overflow-hidden">
 
           {/* Toolbar */}
           <div className="flex items-center gap-2 shrink-0">
             <div className="search-container">
               <Search size={14} className="text-white/30 shrink-0" />
-              <input value={search} onChange={e => setSearch(e.target.value)}
+              <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
                 placeholder="Tìm phòng..."
-                className="flex-1 bg-transparent text-white text-sm placeholder-white/25 outline-none min-w-0" />
-              {search && (
-                <button onClick={() => setSearch('')} className="text-white/30 hover:text-white/60 shrink-0">
+                className="flex-1 bg-transparent text-white text-sm placeholder-white/25 outline-none min-w-0"
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    applyRoomSearch()
+                  }
+                }} />
+              {searchInput && (
+                <button type="button" onClick={() => { setSearchInput(''); setSearchQuery('') }}
+                  className="text-white/30 hover:text-white/60 shrink-0">
                   <X size={12} />
                 </button>
               )}
             </div>
-            <motion.button onClick={onRefresh} whileHover={{ rotate:180 }} whileTap={{ scale:0.9 }}
-              transition={{ duration:0.3 }}
-              className="refresh-btn">
-              <RotateCw size={16} />
+            <motion.button type="button" onClick={applyRoomSearch} whileHover={{ scale:1.03 }} whileTap={{ scale:0.97 }}
+              className="room-search-confirm-btn"
+              title="Tìm phòng và làm mới danh sách">
+              <Check size={15} strokeWidth={2.5} className="shrink-0 opacity-90" />
+              <span className="room-search-confirm-label">Tìm phòng</span>
             </motion.button>
             <motion.button onClick={() => setShowCreate(true)}
               whileHover={{ scale:1.03 }} whileTap={{ scale:0.97 }}

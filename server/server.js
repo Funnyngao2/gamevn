@@ -18,6 +18,8 @@ const REACTOR_FIX_POINT = { x: 3320, y: 1200 }  // reactor_a only
 const LIGHTS_FIX_POINT = { x: 1400, y: 1600 }
 const EMERGENCY_BUTTON_POS = { x: 3320, y: 716 }
 const TASKS_PER_PLAYER = 6
+const MAX_EMERGENCY_MEETINGS_PER_PLAYER = 2
+const EMERGENCY_E_COOLDOWN_MS = 10000
 
 // Khi không đọc được Tasks từ map → dùng pool rỗng (không set cứng x,y vì không chính xác với map thật)
 const TASK_POOL_FALLBACK = []
@@ -231,7 +233,7 @@ function isImpostorPlayer(p) {
 }
 
 function canUseEmergency(p) {
-  return !!p && isAliveState(p) && !isImpostorPlayer(p)
+  return !!p && isAliveState(p)
 }
 
 function broadcastMeetingState(roomId) {
@@ -451,7 +453,12 @@ function getRoomPlayers(roomId) {
   if (!room) return []
   return [...room.players].map(sid => {
     const p = players.get(sid)
-    return p ? { id: sid, uuid: p.uuid, name: p.name, color: p.color, ready: p.ready || false, mic: p.mic || false, ...p.state } : null
+    return p ? {
+      id: sid, uuid: p.uuid, name: p.name, color: p.color, ready: p.ready || false, mic: p.mic || false,
+      emergencyMeetingsLeft: p.emergencyMeetingsLeft ?? MAX_EMERGENCY_MEETINGS_PER_PLAYER,
+      emergencyE_CooldownUntil: p.emergencyE_CooldownUntil ?? 0,
+      ...p.state
+    } : null
   }).filter(Boolean)
 }
 
@@ -804,6 +811,8 @@ io.on('connection', (socket) => {
         p.role = isImposter ? 'impostor' : 'crew'
         p.lastKillAt = Date.now()
         p.lastSabotageAt = 0
+        p.emergencyMeetingsLeft = MAX_EMERGENCY_MEETINGS_PER_PLAYER
+        p.emergencyE_CooldownUntil = 0
         p.assignedTasks = isImposter
           ? assignRandomTasks(TASKS_PER_PLAYER)
           : (crewTaskAssignments.get(sid) || assignRandomTasks(TASKS_PER_PLAYER))
@@ -950,8 +959,33 @@ io.on('connection', (socket) => {
     if (!canUseEmergency(p)) return
     if (distance(p.state, EMERGENCY_BUTTON_POS) > 150) return
     const now = Date.now()
-    if (now - (room.lastMeetingAt || 0) < MEETING_COOLDOWN) return
+    if (now - (room.lastMeetingAt || 0) < MEETING_COOLDOWN) {
+      socket.emit('reportFailed', { reason: 'emergency_e_cooldown', msLeft: MEETING_COOLDOWN - (now - (room.lastMeetingAt || 0)) })
+      return
+    }
+    if ((p.emergencyMeetingsLeft ?? MAX_EMERGENCY_MEETINGS_PER_PLAYER) <= 0) {
+      socket.emit('reportFailed', { reason: 'no_emergency_left' })
+      return
+    }
+    if (now < (p.emergencyE_CooldownUntil || 0)) {
+      socket.emit('reportFailed', { reason: 'emergency_e_cooldown', msLeft: p.emergencyE_CooldownUntil - now })
+      return
+    }
+    p.emergencyMeetingsLeft = (p.emergencyMeetingsLeft ?? MAX_EMERGENCY_MEETINGS_PER_PLAYER) - 1
+    p.emergencyE_CooldownUntil = now + EMERGENCY_E_COOLDOWN_MS
     room.lastMeetingAt = now
+    // Gửi lại số lần còn lại cho toàn phòng qua players broadcast
+    const updatedPlayerList = getRoomPlayers(p.roomId)
+    room.players.forEach(sid => {
+      const pl = players.get(sid)
+      if (!pl) return
+      const myRow = updatedPlayerList.find(r => r.id === sid)
+      if (myRow) {
+        myRow.emergencyMeetingsLeft = pl.emergencyMeetingsLeft ?? MAX_EMERGENCY_MEETINGS_PER_PLAYER
+        myRow.emergencyE_CooldownUntil = pl.emergencyE_CooldownUntil ?? 0
+      }
+      pl.socket.emit('players', { players: updatedPlayerList })
+    })
     startMeeting(p.roomId, socket.id, null)
   })
 

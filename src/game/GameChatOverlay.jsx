@@ -163,7 +163,7 @@ export default function GameChatOverlay({ gameRef, socket, playerName, playerCol
             exit={{ opacity: 0 }}
           >
             <div className="chat-header-minimal">
-              <span className="chat-header-title">Đang trong cuộc họp — dùng chat cuộc họp</span>
+              {/* <span className="chat-header-title">Đang trong cuộc họp — dùng chat cuộc họp</span> */}
             </div>
           </motion.div>
         )}

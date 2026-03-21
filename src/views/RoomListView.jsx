@@ -303,7 +303,7 @@ export default function RoomListView({ rooms, users, playerName, playerColor, so
 
           <motion.button onClick={onBack} whileHover={{ scale:1.02 }} whileTap={{ scale:0.97 }}
             className="back-btn-sidebar">
-            ← Quay lại
+              Quay lại
           </motion.button>
         </motion.div>
 

@@ -6,15 +6,12 @@ const path             = require('path')
 const fs               = require('fs')
 const mysql            = require('mysql2/promise')
 
-const PORT        = process.env.PORT        || 4321
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*'
+const PORT        = process.env.PORT        
+const CORS_ORIGIN = process.env.CORS_ORIGIN 
 const REACTOR_CRITICAL_TIME = 20000
 const KILL_COOLDOWN = 16000
 const SABOTAGE_COOLDOWN = 30000
-/** Sau khi cuộc họp khẩn (E) kết thúc, người gọi không được bấm E lại trong khoảng này */
-const EMERGENCY_E_COOLDOWN_AFTER_MEETING_MS = 10000
-/** Mỗi crewmate chỉ được bấm nút họp khẩn (E) tối đa số lần này mỗi trận */
-const MAX_EMERGENCY_MEETINGS_PER_PLAYER = 2
+const MEETING_COOLDOWN = 20000
 const INTERACT_RANGE = 80
 const KILL_RANGE = 95
 const REACTOR_FIX_POINT = { x: 3320, y: 1200 }  // reactor_a only
@@ -74,7 +71,7 @@ function loadTasksFromMap() {
     const layers = data.layers || []
     let taskLayer = layers.find(l => (l.type === 'objectgroup' || l.type === 'object group') && (l.name === 'Tasks' || l.name === 'tasks'))
     if (!taskLayer || !Array.isArray(taskLayer.objects) || taskLayer.objects.length === 0) {
-      console.warn('[Tasks] Map không có object trong layer "Tasks" — dùng pool rỗng.')
+      // console.warn('[Tasks] Map không có object trong layer "Tasks" — dùng pool rỗng.')
       return TASK_POOL_FALLBACK
     }
 
@@ -97,11 +94,11 @@ function loadTasksFromMap() {
       return TASK_POOL_FALLBACK
     }
     const normalized = tasks.map((t) => ({ ...t, kind: normalizeTaskKind(t.kind) }))
-    console.log(`[Tasks] Đã tải ${normalized.length} nhiệm vụ từ map (layer Tasks):`)
+    // console.log(`[Tasks] Đã tải ${normalized.length} nhiệm vụ từ map (layer Tasks):`)
     normalized.forEach((t, i) => console.log(`  ${i + 1}. id: ${t.id} | kind: ${t.kind} | label: "${t.label}" | x: ${t.x}, y: ${t.y}`))
     return normalized
   } catch (e) {
-    console.warn('[Tasks] Không đọc được map — dùng pool rỗng:', e.message)
+    // console.warn('[Tasks] Không đọc được map — dùng pool rỗng:', e.message)
     return TASK_POOL_FALLBACK
   }
 }
@@ -134,11 +131,11 @@ let db = null
 async function initDB() {
   try {
     const pool = mysql.createPool({
-      host:               process.env.DB_HOST             || '127.0.0.1',
-      port:               Number(process.env.DB_PORT)     || 3306,
-      user:               process.env.DB_USER             || 'root',
-      password:           process.env.DB_PASSWORD         || '',
-      database:           process.env.DB_NAME             || 'gameastro',
+      host:               process.env.DB_HOST           ,
+      port:               Number(process.env.DB_PORT)     ,
+      user:               process.env.DB_USER             ,
+      password:           process.env.DB_PASSWORD        ,
+      database:           process.env.DB_NAME        ,
       waitForConnections: true,
       connectionLimit:    10,
       connectTimeout:     Number(process.env.DB_CONNECT_TIMEOUT) || 3000
@@ -234,8 +231,7 @@ function isImpostorPlayer(p) {
 }
 
 function canUseEmergency(p) {
-  // Impostor cũng bấm E họp khẩn (giả làm crew); vẫn tốn lượt & kiểm tra server như crewmate
-  return !!p && isAliveState(p)
+  return !!p && isAliveState(p) && !isImpostorPlayer(p)
 }
 
 function broadcastMeetingState(roomId) {
@@ -352,8 +348,6 @@ function finishGame(roomId, winner) {
       player.ready = false
       player.role = undefined
       player.assignedTasks = undefined
-      player.emergencyMeetingsLeft = undefined
-      player.emergencyE_CooldownUntil = undefined
       player.state = null
     }
   })
@@ -421,12 +415,6 @@ function endMeeting(roomId, reason = 'timeout') {
   const result = computeMeetingResult(meeting)
   const ejectedSid = result.ejectedId
 
-  // Họp khẩn (E): sau khi họp kết thúc, người báo chờ trước khi dùng E lại
-  if (meeting.victimId == null && meeting.reporterId) {
-    const rep = players.get(meeting.reporterId)
-    if (rep) rep.emergencyE_CooldownUntil = Date.now() + EMERGENCY_E_COOLDOWN_AFTER_MEETING_MS
-  }
-
   if (ejectedSid) {
     const ep = ensurePlayerState(ejectedSid)
     if (ep) {
@@ -463,11 +451,7 @@ function getRoomPlayers(roomId) {
   if (!room) return []
   return [...room.players].map(sid => {
     const p = players.get(sid)
-    if (!p) return null
-    const row = { id: sid, uuid: p.uuid, name: p.name, color: p.color, ready: p.ready || false, mic: p.mic || false, ...p.state }
-    if (typeof p.emergencyMeetingsLeft === 'number') row.emergencyMeetingsLeft = p.emergencyMeetingsLeft
-    if (typeof p.emergencyE_CooldownUntil === 'number') row.emergencyE_CooldownUntil = p.emergencyE_CooldownUntil
-    return row
+    return p ? { id: sid, uuid: p.uuid, name: p.name, color: p.color, ready: p.ready || false, mic: p.mic || false, ...p.state } : null
   }).filter(Boolean)
 }
 
@@ -830,8 +814,6 @@ io.on('connection', (socket) => {
           isGhost: false,
           imposter: isImposter
         }
-        p.emergencyMeetingsLeft = MAX_EMERGENCY_MEETINGS_PER_PLAYER
-        p.emergencyE_CooldownUntil = undefined
         dbRun('UPDATE game_room_players SET role=? WHERE room_id=? AND socket_id=?', 
           [isImposter ? 'impostor' : 'crewmate', p.roomId, sid])
       }
@@ -966,22 +948,11 @@ io.on('connection', (socket) => {
     const p = players.get(socket.id); if (!p?.roomId) return
     const room = rooms.get(p.roomId); if (!room?.started) return
     if (!canUseEmergency(p)) return
-    if ((p.emergencyMeetingsLeft ?? 0) <= 0) {
-      socket.emit('reportFailed', { reason: 'no_emergency_left' })
-      return
-    }
     if (distance(p.state, EMERGENCY_BUTTON_POS) > 150) return
     const now = Date.now()
-    if (now < (p.emergencyE_CooldownUntil || 0)) {
-      socket.emit('reportFailed', {
-        reason: 'emergency_e_cooldown',
-        msLeft: Math.max(0, p.emergencyE_CooldownUntil - now),
-      })
-      return
-    }
-    const started = startMeeting(p.roomId, socket.id, null)
-    if (!started) return
-    p.emergencyMeetingsLeft = Math.max(0, (p.emergencyMeetingsLeft ?? MAX_EMERGENCY_MEETINGS_PER_PLAYER) - 1)
+    if (now - (room.lastMeetingAt || 0) < MEETING_COOLDOWN) return
+    room.lastMeetingAt = now
+    startMeeting(p.roomId, socket.id, null)
   })
 
   socket.on('vote', ({ targetId }) => {

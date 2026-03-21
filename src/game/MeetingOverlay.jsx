@@ -233,6 +233,14 @@ export default function MeetingOverlay({ gameRef, socket }) {
     return clearTimer
   }, [meeting?.phaseEndsAt, meeting?.phase])
 
+  const chatBoxRef = useRef(null)
+
+  useEffect(() => {
+    if (chatBoxRef.current) {
+      chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight
+    }
+  }, [meeting?.messages])
+
   const castVote = (targetId) => {
     setMeeting(prev => {
       if (!prev || prev.phase !== 'vote' || prev.myVote !== null) return prev
@@ -370,7 +378,7 @@ export default function MeetingOverlay({ gameRef, socket }) {
               </div>
 
               <div className="meeting-overlay-right">
-                <div className="meeting-overlay-chat-box">
+                <div ref={chatBoxRef} className="meeting-overlay-chat-box">
                   {meeting.messages.map((msg, idx) => (
                     <div key={idx} className={msg.system ? 'meeting-overlay-msg-system' : ''}>
                       {msg.system ? (

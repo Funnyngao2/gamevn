@@ -609,7 +609,7 @@ this._createHUD()
 
   _updateLightsOverlay() {
     if (!this.game?.registry) return
-    if (!this.sabotageLights || this._lightsToggled) {
+    if (!this.sabotageLights || this._lightsToggled || this.player.isImposter) {
       this.game.registry.set('lightsDarkData', { active: false })
       return
     }

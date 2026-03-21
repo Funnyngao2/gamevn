@@ -50,7 +50,19 @@ export default function MeetingOverlay({ gameRef, socket }) {
     }
   }
 
+  const clearResultSplashTimer = () => {
+    if (resultSplashTimerRef.current) {
+      clearTimeout(resultSplashTimerRef.current)
+      resultSplashTimerRef.current = null
+    }
+  }
+
+  const [showResultSplash, setShowResultSplash] = useState(false)
+  const [resultSplashText, setResultSplashText] = useState('')
+  const resultSplashTimerRef = useRef(null)
+
   const MEETING_SPLASH_MS = 2000
+  const RESULT_SPLASH_MS = 2500
 
   useEffect(() => {
     let cancelled = false
@@ -156,10 +168,10 @@ export default function MeetingOverlay({ gameRef, socket }) {
 
       game.registry.set('onMeetingResult', ({ ejectedId, tied, skipVotes, totalVotes }) => {
         clearTimer()
+        let resultText = ''
         setMeeting(prev => {
           if (!prev) return prev
           const ejected = ejectedId ? prev.players.find(p => String(p.id) === String(ejectedId)) : null
-          let resultText
           if (ejected) {
             resultText = ejected.isImposter
               ? `${ejected.name} bị loại! (Là Sát Nhân)`
@@ -180,10 +192,17 @@ export default function MeetingOverlay({ gameRef, socket }) {
           }
         })
 
+        // Sau 1.5s ẩn panel họp → hiện splash eject → đóng
         setTimeout(() => {
-          game.registry.get('handleMeetingClosed')?.(ejectedId ? Number(ejectedId) : null)
           setMeeting(null)
-        }, 3500)
+          setResultSplashText(resultText)
+          setShowResultSplash(true)
+          resultSplashTimerRef.current = setTimeout(() => {
+            setShowResultSplash(false)
+            setResultSplashText('')
+            game.registry.get('handleMeetingClosed')?.(ejectedId ? Number(ejectedId) : null)
+          }, RESULT_SPLASH_MS)
+        }, 1500)
       })
 
       game.registry.set('onMeetingAbort', () => {
@@ -204,6 +223,7 @@ export default function MeetingOverlay({ gameRef, socket }) {
       cancelled = true
       clearTimer()
       clearSplashTimer()
+      clearResultSplashTimer()
       if (rafId) cancelAnimationFrame(rafId)
       if (boundGame) {
         boundGame.registry.remove?.('onMeetingStart')
@@ -282,6 +302,23 @@ export default function MeetingOverlay({ gameRef, socket }) {
           className="meeting-splash-backdrop"
           aria-hidden>
           <img src={splashImageSrc} alt="" className="meeting-splash-image" draggable={false} />
+        </motion.div>
+      )}
+    </AnimatePresence>
+    <AnimatePresence>
+      {showResultSplash && (
+        <motion.div
+          key="meeting-result-splash"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="meeting-splash-backdrop"
+          aria-hidden>
+          <img src="assets/Images/Alerts/eject.png" alt="" className="meeting-splash-image" draggable={false} />
+          {resultSplashText && (
+            <p className="meeting-result-splash-text">{resultSplashText}</p>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

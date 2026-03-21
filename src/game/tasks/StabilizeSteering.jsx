@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { motion, useMotionValue, useSpring } from 'framer-motion'
+import { motion } from 'framer-motion'
 import './taskMiniShared.css'
 import './StabilizeSteering.css'
 
@@ -19,8 +19,19 @@ export default function StabilizeSteering({ onDone }) {
   const containerRef = useRef(null)
   const lastUpdate = useRef(performance.now())
   const holdStart = useRef(null)
+  const wonRef = useRef(false)
+  const targetPosRef = useRef(targetPos)
+  const actualPosRef = useRef(actualPos)
 
-  // Drift and follow logic
+  useEffect(() => {
+    targetPosRef.current = targetPos
+  }, [targetPos])
+
+  useEffect(() => {
+    actualPosRef.current = actualPos
+  }, [actualPos])
+
+  // Single RAF loop; refs keep target/actual in sync without restarting every frame
   useEffect(() => {
     if (isWon) return
 
@@ -29,34 +40,30 @@ export default function StabilizeSteering({ onDone }) {
       const dt = (t - lastUpdate.current) / 1000
       lastUpdate.current = t
 
-      setActualPos(prev => {
-        // Drift away from center
-        const driftX = Math.sin(t / 800) * 40
-        const driftY = Math.cos(t / 1100) * 40
-        
-        // Move towards where the user is "holding" the stick
-        // In Among Us, the actual pos follows the target pos but with lag/drift
-        const dx = targetPos.x - prev.x
-        const dy = targetPos.y - prev.y
-        
-        const speed = 4.5
-        const nextX = prev.x + dx * speed * dt + (Math.random() - 0.5) * 5 * dt
-        const nextY = prev.y + dy * speed * dt + (Math.random() - 0.5) * 5 * dt
+      const tp = targetPosRef.current
+      const prev = actualPosRef.current
 
-        // Keep within radar bounds
-        const bound = (v) => Math.max(20, Math.min(RADAR_SIZE - 20, v))
-        return { x: bound(nextX), y: bound(nextY) }
-      })
+      const dx = tp.x - prev.x
+      const dy = tp.y - prev.y
 
-      // Check if actual pos is in the center ring
-      const distToCenter = Math.sqrt(Math.pow(actualPos.x - CENTER, 2) + Math.pow(actualPos.y - CENTER, 2))
+      const speed = 4.5
+      const nextX = prev.x + dx * speed * dt + (Math.random() - 0.5) * 5 * dt
+      const nextY = prev.y + dy * speed * dt + (Math.random() - 0.5) * 5 * dt
+
+      const bound = (v) => Math.max(20, Math.min(RADAR_SIZE - 20, v))
+      const next = { x: bound(nextX), y: bound(nextY) }
+      actualPosRef.current = next
+      setActualPos(next)
+
+      const distToCenter = Math.hypot(next.x - CENTER, next.y - CENTER)
       if (distToCenter < TARGET_RADIUS) {
         if (!holdStart.current) holdStart.current = t
         const elapsed = t - holdStart.current
         const p = Math.min(100, (elapsed / HOLD_TIME) * 100)
         setProgress(p)
-        
-        if (p >= 100) {
+
+        if (p >= 100 && !wonRef.current) {
+          wonRef.current = true
           setIsWon(true)
           setTimeout(onDone, 800)
         }
@@ -69,17 +76,42 @@ export default function StabilizeSteering({ onDone }) {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [targetPos, actualPos, isWon, onDone])
+  }, [isWon, onDone])
+
+  const updateTargetFromEvent = useCallback(
+    (e) => {
+      if (isWon || !containerRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const sx = rect.width / RADAR_SIZE
+      const sy = rect.height / RADAR_SIZE
+      if (sx <= 0 || sy <= 0) return
+      const x = (e.clientX - rect.left) / sx
+      const y = (e.clientY - rect.top) / sy
+      const next = {
+        x: Math.max(0, Math.min(RADAR_SIZE, x)),
+        y: Math.max(0, Math.min(RADAR_SIZE, y)),
+      }
+      targetPosRef.current = next
+      setTargetPos(next)
+    },
+    [isWon]
+  )
+
+  const handlePointerDown = (e) => {
+    if (isWon || e.button !== 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    updateTargetFromEvent(e)
+  }
 
   const handlePointerMove = (e) => {
-    if (isWon || !containerRef.current) return
-    const rect = containerRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    setTargetPos({ 
-      x: Math.max(0, Math.min(RADAR_SIZE, x)), 
-      y: Math.max(0, Math.min(RADAR_SIZE, y)) 
-    })
+    if (isWon) return
+    updateTargetFromEvent(e)
+  }
+
+  const handlePointerUp = (e) => {
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
   }
 
   return (
@@ -94,7 +126,10 @@ export default function StabilizeSteering({ onDone }) {
         <div 
           className="radar-container" 
           ref={containerRef}
+          onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
           style={{ width: RADAR_SIZE, height: RADAR_SIZE }}
         >
           {/* Radar background grid */}
@@ -120,7 +155,7 @@ export default function StabilizeSteering({ onDone }) {
           <motion.div 
             className="radar-crosshair"
             animate={{ x: targetPos.x - 15, y: targetPos.y - 15 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            transition={{ type: 'tween', duration: 0.06, ease: 'linear' }}
           >
             <div className="crosshair-line-h" />
             <div className="crosshair-line-v" />
@@ -157,7 +192,7 @@ export default function StabilizeSteering({ onDone }) {
         </div>
       </div>
 
-      <div className="mini-hint">Dùng chuột di chuyển tâm ngắm để điều khiển điểm xanh vào giữa</div>
+      <div className="mini-hint">Nhấn giữ và kéo trên radar (hoặc di chuột) để đưa điểm xanh vào giữa</div>
     </div>
   )
 }
